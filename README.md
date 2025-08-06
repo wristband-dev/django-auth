@@ -42,18 +42,25 @@ You can learn more about how authentication works in Wristband in our documentat
 
 ## Table of Contents
 
+## Table of Contents
+
 - [Installation](#installation)
 - [Usage](#usage)
-  - [1) Initialize the SDK](#1-initialize-the-sdk)
-  - [2) Set Up Session Storage](#2-set-up-session-storage)
-  - [3) Add Auth Endpoints](#3-add-auth-endpoints)
-    - [Login Endpoint](#login-endpoint)
-    - [Callback Endpoint](#callback-endpoint)
-    - [Logout Endpoint](#logout-endpoint)
-  - [4) Guard Your Non-Auth APIs and Handle Token Refresh](#4-guard-your-non-auth-apis-and-handle-token-refresh)
-  - [5) Pass Your Access Token to Downstream APIs](#5-pass-your-access-token-to-downstream-apis)
+  - [1) Configure Wristband Settings](#1-configure-wristband-settings)
+  - [2) Initialize the SDK](#2-initialize-the-sdk)
+  - [3) Set Up Session Storage](#3-set-up-session-storage)
+  - [4) Add Auth Views/Endpoints](#4-add-auth-viewsendpoints)
+    - [URL Configuration](#url-configuration)
+    - [Login View/Endpoint](#login-viewendpoint)
+    - [Callback View/Endpoint](#callback-viewendpoint)
+    - [Logout View/Endpoint](#logout-viewendpoint)
+  - [5) Add Template Context Processor](#5-add-template-context-processor)
+  - [6) Protect Resources and Handle Token Refresh](#6-protect-resources-and-handle-token-refresh)
+  - [7) Pass Your Access Token to Downstream APIs](#7-pass-your-access-token-to-downstream-apis)
+  - [8) Configure CSRF Protection](#8-configure-csrf-protection)
 - [Wristband Auth Configuration Options](#wristband-auth-configuration-options)
 - [API](#api)
+- [Wristband Multi-Tenant Django Demo App](#wristband-multi-tenant-django-demo-app)
 - [Questions](#questions)
 
 <br/>
@@ -128,7 +135,7 @@ def _create_wristband_auth() -> WristbandAuth:
     return WristbandAuth(auth_config)
 
 # Initialize Wristband auth instance
-wristband_auth = WristbandAuth(auth_config)
+wristband_auth = _create_wristband_auth()
 ```
 
 <br>
@@ -191,7 +198,7 @@ SESSION_COOKIE_SECURE = False  # IMPORTANT: Set to True in Production!!
 
 <br>
 
-### 3) Add Auth Views/Endpoints
+### 4) Add Auth Views/Endpoints
 
 There are <ins>three core authentication views/endpoints</ins> your Django application should expose to facilitate both the Login and Logout workflows in Wristband. You'll need to add them to your Django URL configuration and create corresponding views.
 
@@ -339,7 +346,7 @@ class Logout(View):
 
 <br>
 
-### 4) Add Template Context Processor
+### 5) Add Template Context Processor
 
 Django context processors allow you to make data available across all templates without manually passing it from each view. This is perfect for authenticated session data that you want to access in your templates for things like showing user information, login/logout links, and conditional content.
 
@@ -412,7 +419,7 @@ Now you can access authenticated session data in any template:
 
 <br/>
 
-### 5) Protect Resources and Handle Token Refresh
+### 6) Protect Resources and Handle Token Refresh
 
 Create authentication middleware to protect your application views/endpoints and handle automatic token refresh. This middleware will check for valid authentication on protected routes and automatically refresh expired tokens when needed.
 
@@ -511,7 +518,7 @@ The middleware will now protect all your application routes, automatically refre
 
 <br>
 
-### 6) Pass Your Access Token to Downstream APIs
+### 7) Pass Your Access Token to Downstream APIs
 
 > [!NOTE]
 > This is only applicable if you wish to call Wristband's APIs directly or protect your application's other downstream backend APIs.
@@ -564,7 +571,7 @@ class UpdateNickname(View):
 
 <br>
 
-### 7) Configure CSRF Protection
+### 8) Configure CSRF Protection
 
 Cross Site Request Forgery (CSRF) is a security vulnerability where attackers trick authenticated users into unknowingly submitting malicious requests to your application. Django's CSRF protection follows the Synchronizer Token Pattern, which generates a unique tokens for a session, stores them in the session, and validates submitted requests by comparing the submitted token with the session-stored token. This provides robust protection against CSRF attacks.
 
@@ -654,7 +661,7 @@ class Logout(View):
 
 Django automatically includes CSRF tokens in forms:
 
-```python
+```html
 <form method="post">
     {% csrf_token %}  <!-- Django handles this automatically -->
     <button type="submit">Submit</button>
