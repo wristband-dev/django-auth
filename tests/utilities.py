@@ -78,7 +78,7 @@ def assert_authorize_query_params(
     assert query_params["redirect_uri"] == [
         redirect_uri
     ], f"Expected redirect_uri to be [{redirect_uri}], but got {query_params['redirect_uri']}"
-    assert query_params["scope"] == [scopes], f"Expected scope to be [{scopes}], but got {query_params["scope"]}"
+    assert query_params["scope"] == [scopes], f"Expected scope to be [{scopes}], but got {query_params['scope']}"
 
     assert query_params["response_type"] == ["code"]
     assert query_params["code_challenge_method"] == ["S256"]
