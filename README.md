@@ -42,8 +42,7 @@ You can learn more about how authentication works in Wristband in our documentat
 
 ## Table of Contents
 
-## Table of Contents
-
+- [Prerequisites](#prerequisites)
 - [Installation](#installation)
 - [Usage](#usage)
   - [1) Configure Wristband Settings](#1-configure-wristband-settings)
@@ -60,8 +59,20 @@ You can learn more about how authentication works in Wristband in our documentat
   - [8) Configure CSRF Protection](#8-configure-csrf-protection)
 - [Wristband Auth Configuration Options](#wristband-auth-configuration-options)
 - [API](#api)
+  - [`login()`](#loginself-request-httprequest-config-optionalloginconfig---httpresponse)
+  - [`callback()`](#callbackself-request-httprequest---callbackresult)
+  - [`logout()`](#logoutself-request-httprequest-config-optionallogoutconfig---httpresponse)
+  - [`refresh_token_if_expired()`](#refresh_token_if_expiredself-refresh_token-optionalstr-expires_at-optionalint---tokendata--none)
 - [Wristband Multi-Tenant Django Demo App](#wristband-multi-tenant-django-demo-app)
 - [Questions](#questions)
+
+<br/>
+
+## Prerequisites
+
+Before installing the SDK, ensure your environment meets the following requirements:
+- [Python](https://www.python.org) ≥ 3.10
+- [Django](https://www.djangoproject.com) ≥ 4.2 and < 6.0
 
 <br/>
 
@@ -1043,7 +1054,7 @@ If your application uses tenant subdomains, then passing the `tenant_domain_name
 If you have a tenant that relies on a tenant custom domain, then you can either explicitly pass it into the LogoutConfig:
 
 ```python
-response: HttpResponse = await wristband_auth.logout(
+response: HttpResponse = wristband_auth.logout(
     request=request,
     config=LogoutConfig(
         refresh_token="98yht308hf902hc90wh09",
@@ -1056,7 +1067,7 @@ response: HttpResponse = await wristband_auth.logout(
 
 ```python
 # Logout Request URL -> "https://yourapp.ai/auth/logout?client_id=123&tenant_custom_domain=customer01.com"
-response: HttpResponse = await wristband_auth.logout(
+response: HttpResponse = wristband_auth.logout(
     request=request,
     config=LogoutConfig(refresh_token="98yht308hf902hc90wh09")
 )
@@ -1069,7 +1080,7 @@ If your application supports a mixture of tenants that use tenant subdomains and
 Some applications might require the ability to land on a different page besides the Login Page after logging a user out. You can add the `redirect_url` field to the LogoutConfig, and doing so will tell Wristband to redirect to that location after it finishes processing the logout request.
 
 ```python
-response: HttpResponse = await wristband_auth.logout(
+response: HttpResponse = wristband_auth.logout(
     request=request,
     config=LogoutConfig(
         refresh_token="98yht308hf902hc90wh09",
