@@ -431,9 +431,11 @@ class TestWristbandAuthCallback:
 
     def test_callback_builds_tenant_login_url_with_custom_domain(self) -> None:
         """Test callback builds correct tenant login URL with custom domain for redirects."""
-        request = self.factory.get(
-            "/callback?error=login_required&state=test_state&tenant_domain=tenant1&tenant_custom_domain=custom.tenant.com"
+        expected_url = (
+            "/callback?error=login_required&state=test_state&tenant_domain=tenant1"
+            "&tenant_custom_domain=custom.tenant.com"
         )
+        request = self.factory.get(expected_url)
 
         result = self.wristband_auth.callback(request)
 

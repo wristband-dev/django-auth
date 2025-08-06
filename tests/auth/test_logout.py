@@ -50,7 +50,10 @@ class TestWristbandAuthLogout:
             response = self.wristband_auth.logout(request, logout_config)
 
         # Should use config tenant custom domain (priority 1)
-        expected_url = "https://config.custom.com/api/v1/logout?client_id=test_client_id&redirect_url=https://app.example.com/logged-out"
+        expected_url = (
+            "https://config.custom.com/api/v1/logout?client_id=test_client_id"
+            "&redirect_url=https://app.example.com/logged-out"
+        )
         assert_redirect_no_cache(response, expected_url)
 
     def test_logout_with_config_tenant_domain_priority_2(self) -> None:
@@ -64,7 +67,10 @@ class TestWristbandAuthLogout:
             response = self.wristband_auth.logout(request, logout_config)
 
         # Should use config tenant domain (priority 2)
-        expected_url = "https://config-tenant-auth.example.com/api/v1/logout?client_id=test_client_id&redirect_url=https://app.example.com/logged-out"
+        expected_url = (
+            "https://config-tenant-auth.example.com/api/v1/logout?client_id=test_client_id"
+            "&redirect_url=https://app.example.com/logged-out"
+        )
         assert_redirect_no_cache(response, expected_url)
 
     def test_logout_with_query_tenant_custom_domain_priority_3(self) -> None:
@@ -125,7 +131,10 @@ class TestWristbandAuthLogout:
             response = self.wristband_auth.logout(request, logout_config)
 
         # Should fallback to app login URL
-        expected_url = f"https://{self.auth_config.wristband_application_vanity_domain}/login?client_id={self.auth_config.client_id}"
+        expected_url = (
+            f"https://{self.auth_config.wristband_application_vanity_domain}/login"
+            f"?client_id={self.auth_config.client_id}"
+        )
         assert_redirect_no_cache(response, expected_url)
 
     def test_logout_fallback_to_custom_application_login_page(self) -> None:
@@ -217,7 +226,10 @@ class TestWristbandAuthLogout:
         with patch.object(self.wristband_auth.wristband_api, "revoke_refresh_token"):
             response = self.wristband_auth.logout(request, logout_config)
 
-        expected_url = "https://tenant1-auth.example.com/api/v1/logout?client_id=test_client_id&redirect_url=https://app.example.com/farewell"
+        expected_url = (
+            "https://tenant1-auth.example.com/api/v1/logout?client_id=test_client_id"
+            "&redirect_url=https://app.example.com/farewell"
+        )
         assert_redirect_no_cache(response, expected_url)
 
     def test_logout_builds_logout_path_without_redirect_url(self) -> None:
