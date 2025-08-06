@@ -1,6 +1,6 @@
 import base64
 import json
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from cryptography.fernet import Fernet
 
@@ -16,7 +16,7 @@ class SessionEncryptor:
     The secret key must be at least 32 characters to ensure sufficient entropy.
     """
 
-    def __init__(self, secret_key: str | None = None) -> None:
+    def __init__(self, secret_key: Optional[str] = None) -> None:
         """
         Initialize the SessionEncryptor with a secret key.
 

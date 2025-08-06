@@ -1,9 +1,7 @@
-from datetime import datetime, timedelta
-from unittest.mock import Mock, patch
-
 import pytest
 import requests
-
+from datetime import datetime, timedelta
+from unittest.mock import Mock, patch
 from wristband.django_auth.auth import WristbandAuth
 from wristband.django_auth.exceptions import InvalidGrantError, WristbandError
 from wristband.django_auth.models import AuthConfig, TokenData, TokenResponse

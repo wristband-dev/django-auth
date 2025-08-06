@@ -4,7 +4,7 @@ import logging
 import secrets
 import time
 from datetime import datetime
-from typing import Any, Literal, Optional
+from typing import Any, Literal, Optional, Union
 from urllib.parse import urlencode
 
 import requests
@@ -395,7 +395,7 @@ class WristbandAuth:
     #  REFRESH TOKEN IF EXPIRED
     #################################
 
-    def refresh_token_if_expired(self, refresh_token: Optional[str], expires_at: Optional[int]) -> TokenData | None:
+    def refresh_token_if_expired(self, refresh_token: Optional[str], expires_at: Optional[int]) -> Optional[TokenData]:
         """
         Checks if the user's access token has expired and refreshes the token, if necessary.
 
@@ -545,7 +545,7 @@ class WristbandAuth:
             query_params["login_hint"] = login_hint_list[0]
 
         # Separator changes to a period if using an app-level custom domain with tenant subdomains
-        separator: Literal["."] | Literal["-"] = "." if self.config.is_application_custom_domain_active else "-"
+        separator: Union[Literal["."], Literal["-"]] = "." if self.config.is_application_custom_domain_active else "-"
         path_and_query: str = f"/api/v1/oauth2/authorize?{urlencode(query_params)}"
 
         # Domain priority order resolution:

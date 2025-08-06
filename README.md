@@ -71,7 +71,7 @@ You can learn more about how authentication works in Wristband in our documentat
 ## Prerequisites
 
 Before installing the SDK, ensure your environment meets the following requirements:
-- [Python](https://www.python.org) ≥ 3.10
+- [Python](https://www.python.org) ≥ 3.9
 - [Django](https://www.djangoproject.com) ≥ 4.2 and < 6.0
 
 <br/>
@@ -1090,10 +1090,10 @@ response: HttpResponse = wristband_auth.logout(
 )
 ```
 
-### `refresh_token_if_expired(self, refresh_token: Optional[str], expires_at: Optional[int]) -> TokenData | None:`
+### `refresh_token_if_expired(self, refresh_token: Optional[str], expires_at: Optional[int]) -> Optional[TokenData]:`
 
 ```python
-token_data: TokenData | None = wristband_auth.refresh_token_if_expired(
+token_data: Optional[TokenData] = wristband_auth.refresh_token_if_expired(
     refresh_token="98yht308hf902hc90wh09",
     expires_at=1710707503788
 )

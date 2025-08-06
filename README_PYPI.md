@@ -12,7 +12,7 @@ For detailed setup instructions and usage guidelines, visit the project's GitHub
 
 ## Details
 
-This SDK facilitates seamless interaction with Wristband for user authentication within multi-tenant Django applications. It follows OAuth 2.1 and OpenID standards and is supported for Python 3.10+. Key functionalities encompass the following:
+This SDK facilitates seamless interaction with Wristband for user authentication within multi-tenant Django applications. It follows OAuth 2.1 and OpenID standards and is supported for Python 3.9+. Key functionalities encompass the following:
 
 - Initiating a login request by redirecting to Wristband.
 - Receiving callback requests from Wristband to complete a login request.

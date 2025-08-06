@@ -1,6 +1,6 @@
 from dataclasses import asdict, dataclass, field
 from enum import Enum
-from typing import Any, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
 ########################################
 # AUTH CONFIG MODELS
@@ -72,7 +72,7 @@ class LoginState:
     return_url: Optional[str]
     custom_state: Optional[dict[str, Any]]
 
-    def to_dict(self) -> dict[str, str | dict[str, str]]:
+    def to_dict(self) -> Dict[str, Union[str, Dict[str, str]]]:
         """
         Converts the LoginState instance to a dictionary representation.
         """
