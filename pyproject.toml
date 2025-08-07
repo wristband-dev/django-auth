@@ -7,7 +7,7 @@ name = "wristband-django-auth"
 version = "0.1.0"
 description = "SDK for integrating your Python Django application with Wristband. Handles user authentication and token management."
 readme = "README_PYPI.md"
-license = {text = "MIT"}
+license = "MIT"
 authors = [
     {name = "Wristband", email = "support@wristband.dev"},
 ]
@@ -41,7 +41,6 @@ classifiers = [
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
-    "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
     "Intended Audience :: Developers",
     "Topic :: Software Development :: Libraries :: Python Modules",
