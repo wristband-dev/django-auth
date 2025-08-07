@@ -134,6 +134,7 @@ class TestWristbandApiClientGetTokens:
                 "redirect_uri": "https://app.com/callback",
                 "code_verifier": "code_verifier",
             },
+            timeout=15,
         )
 
         # Verify the result
@@ -288,7 +289,9 @@ class TestWristbandApiClientGetUserinfo:
 
         # Verify the request was made correctly
         mock_get.assert_called_once_with(
-            "https://auth.example.com/api/v1/oauth2/userinfo", headers={"Authorization": "Bearer access_token_123"}
+            "https://auth.example.com/api/v1/oauth2/userinfo",
+            headers={"Authorization": "Bearer access_token_123"},
+            timeout=15,
         )
         mock_response.raise_for_status.assert_called_once()
 
@@ -372,6 +375,7 @@ class TestWristbandApiClientRefreshToken:
             "https://auth.example.com/api/v1/oauth2/token",
             headers=self.client.headers,
             data={"grant_type": "refresh_token", "refresh_token": "refresh_token_123"},
+            timeout=15,
         )
 
         # Verify the result
@@ -461,6 +465,7 @@ class TestWristbandApiClientRevokeRefreshToken:
             "https://auth.example.com/api/v1/oauth2/revoke",
             headers=self.client.headers,
             data={"token": "refresh_token_123"},
+            timeout=15,
         )
         mock_response.raise_for_status.assert_called_once()
 
@@ -498,7 +503,9 @@ class TestWristbandApiClientRevokeRefreshToken:
         self.client.revoke_refresh_token("")
 
         mock_post.assert_called_once_with(
-            "https://auth.example.com/api/v1/oauth2/revoke", headers=self.client.headers, data={"token": ""}
+            "https://auth.example.com/api/v1/oauth2/revoke",
+            headers=self.client.headers, data={"token": ""},
+            timeout=15,
         )
 
 
@@ -618,6 +625,7 @@ class TestWristbandApiClientIntegration:
                 "redirect_uri": "uri",
                 "code_verifier": "verifier",
             },
+            timeout=15,
         )
 
         # Test refresh endpoint (same URL)
@@ -626,6 +634,7 @@ class TestWristbandApiClientIntegration:
             "https://auth.example.com/api/v1/oauth2/token",
             headers=self.client.headers,
             data={"grant_type": "refresh_token", "refresh_token": "refresh_token"},
+            timeout=15,
         )
 
         # Test revoke endpoint
@@ -635,6 +644,7 @@ class TestWristbandApiClientIntegration:
             "https://auth.example.com/api/v1/oauth2/revoke",
             headers=self.client.headers,
             data={"token": "refresh_token"},
+            timeout=15,
         )
 
     @patch("wristband.django_auth.client.requests.get")
@@ -648,7 +658,9 @@ class TestWristbandApiClientIntegration:
         self.client.get_userinfo("access_token")
 
         mock_get.assert_called_once_with(
-            "https://auth.example.com/api/v1/oauth2/userinfo", headers={"Authorization": "Bearer access_token"}
+            "https://auth.example.com/api/v1/oauth2/userinfo",
+            headers={"Authorization": "Bearer access_token"},
+            timeout=15,
         )
 
     def test_headers_consistency(self):
@@ -812,6 +824,7 @@ class TestWristbandApiClientEdgeCases:
             "https://auth.example.com/api/v1/oauth2/token",
             headers=self.client.headers,
             data={"grant_type": "refresh_token", "refresh_token": unicode_refresh_token},
+            timeout=15,
         )
 
         assert result.access_token == "access_测试"

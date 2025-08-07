@@ -125,6 +125,7 @@ class WristbandApiClient:
                 "redirect_uri": redirect_uri,
                 "code_verifier": code_verifier,
             },
+            timeout=15,
         )
 
         if response.status_code != 200:
@@ -182,6 +183,7 @@ class WristbandApiClient:
         response = requests.get(
             self.base_url + "/oauth2/userinfo",
             headers={"Authorization": f"Bearer {access_token}"},
+            timeout=15
         )
         response.raise_for_status()
         return response.json()  # type: ignore[no-any-return]
@@ -226,6 +228,7 @@ class WristbandApiClient:
             self.base_url + "/oauth2/token",
             headers=self.headers,
             data={"grant_type": "refresh_token", "refresh_token": refresh_token},
+            timeout=15,
         )
 
         if response.status_code != 200:
@@ -269,5 +272,6 @@ class WristbandApiClient:
             self.base_url + "/oauth2/revoke",
             headers=self.headers,
             data={"token": refresh_token},
+            timeout=15,
         )
         response.raise_for_status()
