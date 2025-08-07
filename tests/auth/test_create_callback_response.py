@@ -32,7 +32,7 @@ class TestWristbandAuthCreateCallbackResponse:
             login_url="https://auth.example.com/login",
             redirect_uri="https://app.example.com/callback",
             wristband_application_vanity_domain="auth.example.com",
-            token_expiry_buffer=60,
+            token_expiration_buffer=60,
         )
         self.wristband_auth = WristbandAuth(self.auth_config)
         self.factory = RequestFactory()

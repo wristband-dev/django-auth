@@ -8,7 +8,7 @@ It handles authentication and error processing.
 
 import base64
 
-import requests
+import httpx
 
 from .exceptions import InvalidGrantError, WristbandError
 from .models import TokenResponse, UserInfo
@@ -28,8 +28,8 @@ class WristbandApiClient:
 
     Attributes:
         base_url (str): The base URL for Wristband API endpoints.
-        headers (dict[str, str]): Default headers including Authorization and Content-Type
-            for API requests.
+        headers (dict[str, str]): Default headers including Authorization and Content-Type for API requests.
+        client (httpx.Client): The httpx client instance for making requests.
     """
 
     def __init__(self, wristband_application_vanity_domain: str, client_id: str, client_secret: str) -> None:
@@ -67,6 +67,9 @@ class WristbandApiClient:
             "Authorization": f"Basic {encoded_credentials}",
             "Content-Type": "application/x-www-form-urlencoded",
         }
+
+        # Initialize httpx client with default headers and timeout
+        self.client = httpx.Client(headers=self.headers, timeout=15.0)
 
     def get_tokens(self, code: str, redirect_uri: str, code_verifier: str) -> TokenResponse:
         """
@@ -116,16 +119,14 @@ class WristbandApiClient:
         if not code_verifier or not code_verifier.strip():
             raise ValueError("Code verifier is required")
 
-        response = requests.post(
+        response = self.client.post(
             self.base_url + "/oauth2/token",
-            headers=self.headers,
             data={
                 "grant_type": "authorization_code",
                 "code": code,
                 "redirect_uri": redirect_uri,
                 "code_verifier": code_verifier,
             },
-            timeout=15,
         )
 
         if response.status_code != 200:
@@ -168,7 +169,7 @@ class WristbandApiClient:
                 Additional custom claims may be present based on your configuration.
 
         Raises:
-            requests.HTTPError: For any errors encountered during request.
+            httpx.HTTPStatusError: For any errors encountered during request.
 
         Note:
             The exact claims returned depend on:
@@ -180,10 +181,9 @@ class WristbandApiClient:
             RFC 6749 Section 7: https://tools.ietf.org/html/rfc6749#section-7
             OpenID Connect UserInfo: https://openid.net/specs/openid-connect-core-1_0.html#UserInfo
         """
-        response = requests.get(
+        response = self.client.get(
             self.base_url + "/oauth2/userinfo",
             headers={"Authorization": f"Bearer {access_token}"},
-            timeout=15
         )
         response.raise_for_status()
         return response.json()  # type: ignore[no-any-return]
@@ -219,16 +219,14 @@ class WristbandApiClient:
                 - Refresh token has been revoked by the user
                 - Refresh token has exceeded its maximum lifetime
                 - Refresh token was issued to a different client
-            requests.HTTPError: For all other errors during request.
+            httpx.HTTPStatusError: For all other errors during request.
 
         See Also:
             RFC 6749 Section 6: https://tools.ietf.org/html/rfc6749#section-6
         """
-        response = requests.post(
+        response = self.client.post(
             self.base_url + "/oauth2/token",
-            headers=self.headers,
             data={"grant_type": "refresh_token", "refresh_token": refresh_token},
-            timeout=15,
         )
 
         if response.status_code != 200:
@@ -263,15 +261,13 @@ class WristbandApiClient:
                 invalidated and should be removed from storage.
 
         Raises:
-            requests.HTTPError: For any errors encountered during request.
+            httpx.HTTPStatusError: For any errors encountered during request.
 
         See Also:
             RFC 7009: https://tools.ietf.org/html/rfc7009
         """
-        response = requests.post(
+        response = self.client.post(
             self.base_url + "/oauth2/revoke",
-            headers=self.headers,
             data={"token": refresh_token},
-            timeout=15,
         )
         response.raise_for_status()

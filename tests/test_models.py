@@ -42,7 +42,7 @@ class TestAuthConfig:
         assert config.is_application_custom_domain_active is False
         assert config.parse_tenant_from_root_domain is None
         assert config.scopes == ["openid", "offline_access", "email"]
-        assert config.token_expiry_buffer == 60
+        assert config.token_expiration_buffer == 60
 
     def test_auth_config_all_fields(self):
         """Test AuthConfig with all fields specified."""
@@ -58,7 +58,7 @@ class TestAuthConfig:
             is_application_custom_domain_active=True,
             parse_tenant_from_root_domain="example.com",
             scopes=["openid", "profile", "email"],
-            token_expiry_buffer=120,
+            token_expiration_buffer=120,
         )
 
         assert config.custom_application_login_page_url == "https://custom.example.com/login"
@@ -66,7 +66,7 @@ class TestAuthConfig:
         assert config.is_application_custom_domain_active is True
         assert config.parse_tenant_from_root_domain == "example.com"
         assert config.scopes == ["openid", "profile", "email"]
-        assert config.token_expiry_buffer == 120
+        assert config.token_expiration_buffer == 120
 
     def test_auth_config_empty_scopes(self):
         """Test AuthConfig with empty scopes list."""
@@ -82,8 +82,8 @@ class TestAuthConfig:
 
         assert config.scopes == []
 
-    def test_auth_config_none_token_expiry_buffer(self):
-        """Test AuthConfig with None token_expiry_buffer."""
+    def test_auth_config_none_token_expiration_buffer(self):
+        """Test AuthConfig with None token_expiration_buffer."""
         config = AuthConfig(
             client_id="test_client_id",
             client_secret="test_client_secret",
@@ -91,10 +91,10 @@ class TestAuthConfig:
             login_url="https://example.com/login",
             redirect_uri="https://example.com/callback",
             wristband_application_vanity_domain="app.wristband.dev",
-            token_expiry_buffer=None,
+            token_expiration_buffer=None,
         )
 
-        assert config.token_expiry_buffer is None
+        assert config.token_expiration_buffer is None
 
 
 class TestLoginState:

@@ -1,7 +1,9 @@
-import pytest
-import requests
 from datetime import datetime, timedelta
 from unittest.mock import Mock, patch
+
+import httpx
+import pytest
+
 from wristband.django_auth.auth import WristbandAuth
 from wristband.django_auth.exceptions import InvalidGrantError, WristbandError
 from wristband.django_auth.models import AuthConfig, TokenData, TokenResponse
@@ -19,7 +21,7 @@ class TestWristbandAuthRefreshTokenIfExpired:
             login_url="https://auth.example.com/login",
             redirect_uri="https://app.example.com/callback",
             wristband_application_vanity_domain="auth.example.com",
-            token_expiry_buffer=60,  # 60 second buffer
+            token_expiration_buffer=60,  # 60 second buffer
         )
         self.wristband_auth = WristbandAuth(self.auth_config)
 
@@ -100,11 +102,11 @@ class TestWristbandAuthRefreshTokenIfExpired:
         assert result.refresh_token == "new_refresh_token"
 
     @patch("wristband.django_auth.auth.time.time")
-    def test_refresh_token_if_expired_with_no_token_expiry_buffer(self, mock_time) -> None:
+    def test_refresh_token_if_expired_with_no_token_expiration_buffer(self, mock_time) -> None:
         """Test token refresh with no expiry buffer configured."""
         mock_time.return_value = 1640995200.0
 
-        # Create config without token_expiry_buffer
+        # Create config without token_expiration_buffer
         config_no_buffer = AuthConfig(
             client_id="test_client_id",
             client_secret="test_client_secret",
@@ -112,7 +114,7 @@ class TestWristbandAuthRefreshTokenIfExpired:
             login_url="https://auth.example.com/login",
             redirect_uri="https://app.example.com/callback",
             wristband_application_vanity_domain="auth.example.com",
-            token_expiry_buffer=None,
+            token_expiration_buffer=None,
         )
         wristband_auth = WristbandAuth(config_no_buffer)
 
@@ -159,7 +161,7 @@ class TestWristbandAuthRefreshTokenIfExpired:
         mock_response.status_code = 400
         mock_response.json.return_value = {"error_description": "Bad Request"}
 
-        mock_http_error = requests.HTTPError("400 Client Error")
+        mock_http_error = httpx.HTTPStatusError("400 Bad Request", request=Mock(), response=mock_response)
         mock_http_error.response = mock_response
 
         with patch.object(self.wristband_auth.wristband_api, "refresh_token") as mock_refresh:
@@ -185,7 +187,7 @@ class TestWristbandAuthRefreshTokenIfExpired:
         mock_response.status_code = 401
         mock_response.json.side_effect = Exception("Invalid JSON")
 
-        mock_http_error = requests.HTTPError("401 Unauthorized")
+        mock_http_error = httpx.HTTPStatusError("401 Unauthorized", request=Mock(), response=mock_response)
         mock_http_error.response = mock_response
 
         with patch.object(self.wristband_auth.wristband_api, "refresh_token") as mock_refresh:
@@ -208,7 +210,7 @@ class TestWristbandAuthRefreshTokenIfExpired:
         mock_response = Mock()
         mock_response.status_code = 500
 
-        mock_http_error = requests.HTTPError("500 Internal Server Error")
+        mock_http_error = httpx.HTTPStatusError("500 Internal Server Error", request=Mock(), response=mock_response)
         mock_http_error.response = mock_response
 
         with patch.object(self.wristband_auth.wristband_api, "refresh_token") as mock_refresh:
@@ -238,7 +240,8 @@ class TestWristbandAuthRefreshTokenIfExpired:
         # Create a mock 500 error for first attempt
         mock_response = Mock()
         mock_response.status_code = 500
-        mock_http_error = requests.HTTPError("500 Internal Server Error")
+
+        mock_http_error = httpx.HTTPStatusError("500 Internal Server Error", request=Mock(), response=mock_response)
         mock_http_error.response = mock_response
 
         # Success response for second attempt
@@ -266,8 +269,7 @@ class TestWristbandAuthRefreshTokenIfExpired:
         refresh_token = "valid_refresh_token"
         expires_at = int((datetime.now() - timedelta(hours=1)).timestamp() * 1000)
 
-        mock_http_error = requests.HTTPError("Network error")
-        mock_http_error.response = None
+        mock_http_error = httpx.RequestError("Network error")
 
         with patch.object(self.wristband_auth.wristband_api, "refresh_token") as mock_refresh:
             with patch("wristband.django_auth.auth.time.sleep"):
@@ -299,7 +301,7 @@ class TestWristbandAuthRefreshTokenIfExpired:
                 # Should be retried 3 times
                 assert mock_refresh.call_count == 3
 
-    def test_refresh_token_if_expired_token_expiry_buffer_calculation(self) -> None:
+    def test_refresh_token_if_expired_token_expiration_buffer_calculation(self) -> None:
         """Test token expiry buffer is correctly applied to expires_in."""
         # Create config with custom buffer
         config_custom_buffer = AuthConfig(
@@ -309,7 +311,7 @@ class TestWristbandAuthRefreshTokenIfExpired:
             login_url="https://auth.example.com/login",
             redirect_uri="https://app.example.com/callback",
             wristband_application_vanity_domain="auth.example.com",
-            token_expiry_buffer=120,  # 2 minute buffer
+            token_expiration_buffer=120,  # 2 minute buffer
         )
         wristband_auth = WristbandAuth(config_custom_buffer)
 
@@ -355,3 +357,39 @@ class TestWristbandAuthRefreshTokenIfExpired:
 
         assert result is not None
         assert result.access_token == "new_access_token"
+
+    @patch("wristband.django_auth.auth.time.time")
+    def test_refresh_token_if_expired_with_zero_token_expiration_buffer(self, mock_time) -> None:
+        """Test token refresh with zero expiry buffer configured."""
+        mock_time.return_value = 1640995200.0
+
+        # Create config with zero token_expiration_buffer
+        config_zero_buffer = AuthConfig(
+            client_id="test_client_id",
+            client_secret="test_client_secret",
+            login_state_secret="this_is_a_very_long_secret_key_for_testing_purposes_123456789",
+            login_url="https://auth.example.com/login",
+            redirect_uri="https://app.example.com/callback",
+            wristband_application_vanity_domain="auth.example.com",
+            token_expiration_buffer=0,  # Zero buffer
+        )
+        wristband_auth = WristbandAuth(config_zero_buffer)
+
+        refresh_token = "expired_refresh_token"
+        expires_at = int((datetime.now() - timedelta(hours=1)).timestamp() * 1000)
+
+        mock_token_response = TokenResponse(
+            access_token="new_access_token",
+            id_token="new_id_token",
+            expires_in=3600,
+            refresh_token="new_refresh_token",
+            token_type="Bearer",
+            scope="openid offline_access email",
+        )
+
+        with patch.object(wristband_auth.wristband_api, "refresh_token", return_value=mock_token_response):
+            result = wristband_auth.refresh_token_if_expired(refresh_token, expires_at)
+
+        assert result is not None
+        assert result.expires_in == 3600  # No buffer applied (3600 - 0)
+        assert result.expires_at == int((1640995200.0 + 3600) * 1000)

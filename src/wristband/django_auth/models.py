@@ -30,8 +30,9 @@ class AuthConfig:
         parse_tenant_from_root_domain: The root domain for your application from which to parse
             out the tenant domain name. Indicates whether tenant subdomains are used for authentication.
         scopes: The scopes required for authentication.
-        token_expiry_buffer: Buffer time in seconds to subtract from token expiration. This helps account
-            for network latency and clock drift between systems.
+        token_expiration_buffer: Buffer time (in seconds) to subtract from the access token’s expiration time.
+            This causes the token to be treated as expired before its actual expiration, helping to avoid token
+            expiration during API calls.
     """
 
     client_id: str
@@ -45,7 +46,7 @@ class AuthConfig:
     is_application_custom_domain_active: bool = False
     parse_tenant_from_root_domain: Optional[str] = None
     scopes: List[str] = field(default_factory=lambda: ["openid", "offline_access", "email"])
-    token_expiry_buffer: Optional[int] = 60
+    token_expiration_buffer: Optional[int] = 60
 
 
 ########################################

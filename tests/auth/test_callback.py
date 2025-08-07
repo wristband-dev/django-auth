@@ -37,7 +37,7 @@ class TestWristbandAuthCallback:
             login_url="https://auth.example.com/login",
             redirect_uri="https://app.example.com/callback",
             wristband_application_vanity_domain="auth.example.com",
-            token_expiry_buffer=60,
+            token_expiration_buffer=60,
         )
         self.wristband_auth = WristbandAuth(self.auth_config)
         self.factory = RequestFactory()
@@ -274,7 +274,7 @@ class TestWristbandAuthCallback:
         assert result.callback_data.tenant_custom_domain == "custom.tenant.com"
 
     @patch("wristband.django_auth.auth.time.time")
-    def test_callback_with_no_token_expiry_buffer(self, mock_time) -> None:
+    def test_callback_with_no_token_expiration_buffer(self, mock_time) -> None:
         """Test callback handles missing token expiry buffer correctly."""
         mock_time.return_value = 1640995200.0
 
@@ -285,7 +285,7 @@ class TestWristbandAuthCallback:
             login_url="https://auth.example.com/login",
             redirect_uri="https://app.example.com/callback",
             wristband_application_vanity_domain="auth.example.com",
-            token_expiry_buffer=None,
+            token_expiration_buffer=None,
         )
         wristband_auth = WristbandAuth(config_no_buffer)
 
@@ -391,7 +391,7 @@ class TestWristbandAuthCallback:
             redirect_uri="https://{tenant_domain}.app.example.com/callback",
             wristband_application_vanity_domain="auth.example.com",
             parse_tenant_from_root_domain="auth.example.com",
-            token_expiry_buffer=60,
+            token_expiration_buffer=60,
         )
         wristband_auth = WristbandAuth(config_with_subdomain)
 
@@ -466,3 +466,53 @@ class TestWristbandAuthCallback:
 
         assert result.type == CallbackResultType.REDIRECT_REQUIRED
         assert result.redirect_url == "https://tenant1.auth.example.com/login"
+
+    @patch("wristband.django_auth.auth.time.time")
+    def test_callback_with_zero_token_expiration_buffer(self, mock_time) -> None:
+        """Test callback handles zero token expiry buffer correctly."""
+        mock_time.return_value = 1640995200.0
+
+        config_zero_buffer = AuthConfig(
+            client_id="test_client_id",
+            client_secret="test_client_secret",
+            login_state_secret=test_login_state_secret,
+            login_url="https://auth.example.com/login",
+            redirect_uri="https://app.example.com/callback",
+            wristband_application_vanity_domain="auth.example.com",
+            token_expiration_buffer=0,  # Zero buffer
+        )
+        wristband_auth = WristbandAuth(config_zero_buffer)
+
+        request = self.factory.get("/callback?code=auth_code&state=test_state&tenant_domain=tenant1")
+
+        from wristband.django_auth.models import LoginState
+
+        login_state = LoginState(
+            state="test_state",
+            code_verifier="test_verifier",
+            redirect_uri="https://app.example.com/callback",
+            return_url=None,
+            custom_state=None,
+        )
+        encrypted_cookie = wristband_auth._encrypt_login_state(login_state)
+        request.COOKIES = {"login#test_state#1640995200000": encrypted_cookie}
+
+        mock_token_response = TokenResponse(
+            access_token="access_token_123",
+            id_token="id_token_123",
+            expires_in=3600,
+            refresh_token="refresh_token_123",
+            token_type="Bearer",
+            scope="openid offline_access email",
+        )
+
+        mock_user_info = UserInfo(sub="user_123", email="user@example.com", email_verified=True, username="testuser")
+
+        with patch.object(wristband_auth.wristband_api, "get_tokens", return_value=mock_token_response):
+            with patch.object(wristband_auth.wristband_api, "get_userinfo", return_value=mock_user_info):
+                result = wristband_auth.callback(request)
+
+        # Should not apply any buffer (3600 - 0 = 3600)
+        assert result.callback_data is not None
+        assert result.callback_data.expires_in == 3600  # No buffer applied
+        assert result.callback_data.expires_at == int((1640995200.0 + 3600) * 1000)

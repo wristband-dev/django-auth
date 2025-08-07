@@ -740,7 +740,7 @@ def __init__(self, auth_config: AuthConfig) -> None:
 | redirect_uri | str | Yes | The URI that Wristband will redirect to after authenticating a user.  This should point to your application's callback endpoint. If you intend to use tenant subdomains in your Callback Endpoint URL, then this value must contain the `{tenant_domain}` token. For example: `https://{tenant_domain}.yourapp.com/auth/callback`. |
 | scopes | List[str] | No | The scopes required for authentication. Refer to the docs for [currently supported scopes](https://docs.wristband.dev/docs/oauth2-and-openid-connect-oidc#supported-openid-scopes). The default value is `["openid", "offline_access", "email"]`. |
 | wristband_application_vanity_domain | str | Yes | The vanity domain of the Wristband application. |
-| token_expiry_buffer | int | No | Buffer time in seconds to subtract from token expiration. This helps account for network latency and clock drift between systems. Provided values must be a positive integer. Defaults to 60 seconds. |
+| token_expiration_buffer | int | No | Buffer time (in seconds) to subtract from the access token’s expiration time. This causes the token to be treated as expired before its actual expiration, helping to avoid token expiration during API calls. Defaults to 60 seconds. |
 
 ## API
 
@@ -923,8 +923,8 @@ The `CallbackData` is defined as follows:
 | ------------------ | ---- | ----------- |
 | access_token | string | The access token that can be used for accessing Wristband APIs as well as protecting your application's backend APIs. |
 | custom_state | Optional[dict[str, Any]] | If you injected custom state into the Login State Cookie during the Login Endpoint for the current auth request, then that same custom state will be returned in this field. |
-| expires_at | int | The absolute expiration time of the access token in milliseconds since the Unix epoch. The `token_expiry_buffer` SDK configuration is accounted for in this value. |
-| expires_in | int | The durtaion from the current time until the access token is expired (in seconds). The `token_expiry_buffer` SDK configuration is accounted for in this value. |
+| expires_at | int | The absolute expiration time of the access token in milliseconds since the Unix epoch. The `token_expiration_buffer` SDK configuration is accounted for in this value. |
+| expires_in | int | The durtaion from the current time until the access token is expired (in seconds). The `token_expiration_buffer` SDK configuration is accounted for in this value. |
 | id_token | str | The ID token uniquely identifies the user that is authenticating and contains claim data about the user. |
 | refresh_token | Optional[str] | The refresh token that renews expired access tokens with Wristband, maintaining continuous access to services. |
 | return_url | Optional[str] | The URL to return to after authentication is completed. |

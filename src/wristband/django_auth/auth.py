@@ -7,7 +7,7 @@ from datetime import datetime
 from typing import Any, Literal, Optional, Union
 from urllib.parse import urlencode
 
-import requests
+import httpx
 from django.http import HttpRequest, HttpResponse
 from django.shortcuts import redirect
 
@@ -42,7 +42,7 @@ class WristbandAuth:
     - Checking for expired access tokens and refreshing them automatically, if necessary.
     """
 
-    _cookie_prefix: str = "login#"
+    _login_state_cookie_prefix: str = "login#"
     _login_state_cookie_separator: str = "#"
     _tenant_domain_token: str = "{tenant_domain}"
     _token_refresh_retries = 2
@@ -64,8 +64,8 @@ class WristbandAuth:
             or len(auth_config.login_state_secret) < 32
         ):
             raise ValueError("The [login_state_secret] config must have a value of at least 32 characters.")
-        if auth_config.token_expiry_buffer is not None and auth_config.token_expiry_buffer <= 0:
-            raise ValueError("The [token_expiry_buffer] config must be greater than 0.")
+        if auth_config.token_expiration_buffer is not None and auth_config.token_expiration_buffer < 0:
+            raise ValueError("The [token_expiration_buffer] config must be greater than or equal to 0.")
         if auth_config.parse_tenant_from_root_domain and auth_config.parse_tenant_from_root_domain.strip():
             if self._tenant_domain_token not in auth_config.login_url:
                 raise ValueError(
@@ -263,7 +263,7 @@ class WristbandAuth:
             userinfo: UserInfo = self.wristband_api.get_userinfo(token_response.access_token)
 
             # Calculate token expiry buffer
-            expires_in = token_response.expires_in - (self.config.token_expiry_buffer or 0)
+            expires_in = token_response.expires_in - (self.config.token_expiration_buffer or 0)
             expires_at = int((time.time() + expires_in) * 1000)
 
             return CallbackResult(
@@ -421,7 +421,7 @@ class WristbandAuth:
                 token_response: TokenResponse = self.wristband_api.refresh_token(refresh_token)
 
                 # Calculate token expiry buffer
-                expires_in = token_response.expires_in - (self.config.token_expiry_buffer or 0)
+                expires_in = token_response.expires_in - (self.config.token_expiration_buffer or 0)
                 expires_at = int((time.time() + expires_in) * 1000)
 
                 return TokenData(
@@ -434,7 +434,7 @@ class WristbandAuth:
             except InvalidGrantError as e:
                 # Do not retry, bail immediately
                 raise e
-            except requests.HTTPError as e:
+            except httpx.HTTPStatusError as e:
                 # Only 4xx errors should short-circuit the retry loop early.
                 if e.response is not None and 400 <= e.response.status_code < 500:
                     try:
@@ -574,7 +574,10 @@ class WristbandAuth:
 
     def _create_login_state_cookie(self, response: HttpResponse, state: str, encrypted_data: str) -> None:
         """Create login state cookie"""
-        cookie_name = f"{self._cookie_prefix}{state}{self._login_state_cookie_separator}{int(time.time() * 1000)}"
+        cookie_name = (
+            f"{self._login_state_cookie_prefix}{state}"
+            f"{self._login_state_cookie_separator}{int(time.time() * 1000)}"
+        )
         response.set_cookie(
             key=cookie_name,
             value=encrypted_data,
@@ -588,7 +591,7 @@ class WristbandAuth:
     def _get_login_state_cookie(self, request: HttpRequest) -> tuple[Optional[str], Optional[str]]:
         """Get login state cookie - returns (cookie_name, cookie_value)"""
         param_state = request.GET.get("state", "")
-        cookie_prefix = f"{self._cookie_prefix}{param_state}{self._login_state_cookie_separator}"
+        cookie_prefix = f"{self._login_state_cookie_prefix}{param_state}{self._login_state_cookie_separator}"
 
         for cookie_name, cookie_value in request.COOKIES.items():
             if cookie_name.startswith(cookie_prefix):
@@ -610,7 +613,7 @@ class WristbandAuth:
     def _clear_oldest_login_state_cookie(self, request: HttpRequest, response: HttpResponse) -> None:
         """Clear oldest login state cookies if too many exist"""
         cookies = request.COOKIES
-        login_cookie_names = [name for name in cookies if name.startswith(self._cookie_prefix)]
+        login_cookie_names = [name for name in cookies if name.startswith(self._login_state_cookie_prefix)]
 
         if len(login_cookie_names) >= 3:
             timestamps = []
