@@ -19,49 +19,61 @@ help:
 # Installation
 install:
 	@echo "Creating virtual environment..."
-	python3 -m venv venv
+	python3 -m venv .venv
 	@echo "Upgrading pip..."
-	venv/bin/pip install --upgrade pip
+	.venv/bin/pip install --upgrade pip
 	@echo "Installing development dependencies..."
-	venv/bin/pip install -e ".[dev]"
+	.venv/bin/pip install -e ".[dev]"
 	@echo ""
 	@echo "✅ Setup complete!"
 
 # Testing
 test:
-	venv/bin/python -m pytest tests/ -x -s
+	@echo "🧪 Running tests..."
+	.venv/bin/python -m pytest tests/ -x -s
+	@echo "✅ Tests completed!"
 
 test-specific:
-	venv/bin/python -m pytest -x -s $(ARGS)
+	@echo "🧪 Running specific tests: $(ARGS)"
+	.venv/bin/python -m pytest -x -s $(ARGS)
+	@echo "✅ Specific tests completed!"
 
 test-coverage:
-	venv/bin/python -m pytest tests/ --cov=wristband --cov-report=term-missing
+	@echo "🧪 Running tests with coverage report..."
+	.venv/bin/python -m pytest tests/ --cov=wristband --cov-report=term-missing
+	@echo "✅ Coverage report completed!"
 
 # Code Quality
 lint:
-	venv/bin/python -m flake8 src tests
+	@echo "Running flake8 linter..."
+	.venv/bin/python -m flake8 src tests
+	@echo "✅ Linting complete!"
 
 format:
-	venv/bin/python -m isort src tests
-	venv/bin/python -m black src tests
+	@echo "Formatting code with isort and black..."
+	.venv/bin/python -m isort src tests
+	.venv/bin/python -m black src tests
+	@echo "✅ Code formatting complete!"
 
 type-check:
-	venv/bin/python -m mypy src
+	@echo "Running mypy type checking..."
+	.venv/bin/python -m mypy src
+	@echo "✅ Type checking complete!"
 
 # Security checks
 security-check:
 	@echo "🔍 Checking dependencies for known vulnerabilities..."
-	venv/bin/python -m pip_audit
+	.venv/bin/python -m pip_audit
 	@echo ""
 	@echo "🔍 Scanning source code for security issues..."
-	venv/bin/python -m bandit -r src/
+	.venv/bin/python -m bandit -r src/
 	@echo ""
 	@echo "✅ Security checks complete!"
 
 # Build and distribution
 clean:
-	@echo "Creating virtual environment for build..."
-	rm -rf venv/ build/ dist/ *.egg-info/ .coverage htmlcov/ .pytest_cache/ .mypy_cache/
+	@echo "Cleaning virtual environment and build artifacts..."
+	rm -rf .venv/ build/ dist/ *.egg-info/ .coverage htmlcov/ .pytest_cache/ .mypy_cache/
 	find . -type d -name __pycache__ -delete
 	find . -type f -name "*.pyc" -delete
 	@echo "✅ Cleanup complete."
@@ -72,14 +84,17 @@ build:
 	find . -type d -name __pycache__ -delete
 	find . -type f -name "*.pyc" -delete
 	@echo "Building distribution packages..."
-	venv/bin/python -m build
+	.venv/bin/python -m build
 	@echo "✅ Build complete."
 
 # Publishing
 publish-test: build
-	venv/bin/python -m twine upload --repository testpypi dist/*
+	@echo "📦 Publishing to TestPyPI..."
+	.venv/bin/python -m twine upload --repository testpypi dist/*
+	@echo "✅ Published to TestPyPI successfully!"
 
 publish: build
 	@echo "⚠️  Publishing to PyPI! Make sure you're ready..."
 	@read -p "Continue? (y/N): " confirm && [ "$confirm" = "y" ]
-	venv/bin/python -m twine upload dist/*
+	.venv/bin/python -m twine upload dist/*
+	@echo "✅ Publish complete."

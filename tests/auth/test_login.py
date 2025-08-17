@@ -720,3 +720,171 @@ class TestWristbandAuthAssertSingleParam:
         result = self.wristband_auth._assert_single_param(request, "param")
 
         assert result == ""
+
+
+class TestClearOldestLoginStateCooie:
+    def setup_method(self) -> None:
+        """Set up test fixtures."""
+        self.auth_config = AuthConfig(
+            client_id="test_client_id",
+            client_secret="test_client_secret",
+            login_state_secret=test_login_state_secret,
+            login_url="https://auth.example.com/login",
+            redirect_uri="https://app.example.com/callback",
+            wristband_application_vanity_domain="auth.example.com",
+        )
+        self.wristband_auth = WristbandAuth(self.auth_config)
+        self.factory = RequestFactory()
+
+    def test_clear_oldest_login_state_cookie_with_fewer_than_three_cookies(self) -> None:
+        """Test _clear_oldest_login_state_cookie does nothing when fewer than 3 login cookies exist."""
+        from django.http import HttpResponse
+
+        request = self.factory.get("/login")
+        request.COOKIES = {
+            "login#state1#1640995200000": "encrypted_data_1",
+            "login#state2#1640995201000": "encrypted_data_2",
+            "unrelated_cookie": "unrelated_value",
+        }
+        response = HttpResponse()
+
+        self.wristband_auth._clear_oldest_login_state_cookie(request, response)
+
+        # No cookies should be cleared (max_age=0 means cleared)
+        cleared_cookies = [key for key, cookie in response.cookies.items() if cookie.get("max-age") == 0]
+        assert len(cleared_cookies) == 0
+
+    def test_clear_oldest_login_state_cookie_clears_oldest_when_three_or_more(self) -> None:
+        """Test _clear_oldest_login_state_cookie clears oldest cookies when 3+ exist."""
+        from django.http import HttpResponse
+
+        request = self.factory.get("/login")
+        request.COOKIES = {
+            "login#state1#1640995200000": "encrypted_data_1",  # oldest
+            "login#state2#1640995201000": "encrypted_data_2",  # middle
+            "login#state3#1640995202000": "encrypted_data_3",  # newest
+            "unrelated_cookie": "unrelated_value",
+        }
+        response = HttpResponse()
+
+        self.wristband_auth._clear_oldest_login_state_cookie(request, response)
+
+        # Only the oldest cookie should be cleared
+        cleared_cookies = [key for key, cookie in response.cookies.items() if cookie.get("max-age") == 0]
+        assert len(cleared_cookies) == 1
+        assert "login#state1#1640995200000" in cleared_cookies
+
+        # Verify the cleared cookie has correct attributes
+        cleared_cookie = response.cookies["login#state1#1640995200000"]
+        assert cleared_cookie.value == ""
+        assert cleared_cookie.get("max-age") == 0
+        assert cleared_cookie.get("path") == "/"
+        assert cleared_cookie.get("httponly") is True
+        assert cleared_cookie.get("secure") is True  # Assuming dangerously_disable_secure_cookies is False
+
+    def test_clear_oldest_login_state_cookie_clears_multiple_old_cookies(self) -> None:
+        """Test _clear_oldest_login_state_cookie clears multiple old cookies when more than 3 exist."""
+        from django.http import HttpResponse
+
+        request = self.factory.get("/login")
+        request.COOKIES = {
+            "login#state1#1640995200000": "encrypted_data_1",  # oldest - should be cleared
+            "login#state2#1640995201000": "encrypted_data_2",  # old - should be cleared
+            "login#state3#1640995202000": "encrypted_data_3",  # middle - should be cleared
+            "login#state4#1640995203000": "encrypted_data_4",  # second newest - should be kept
+            "login#state5#1640995204000": "encrypted_data_5",  # newest - should be kept
+            "unrelated_cookie": "unrelated_value",
+        }
+        response = HttpResponse()
+
+        self.wristband_auth._clear_oldest_login_state_cookie(request, response)
+
+        # The 3 oldest cookies should be cleared, keeping only the 2 newest
+        cleared_cookies = [key for key, cookie in response.cookies.items() if cookie.get("max-age") == 0]
+        assert len(cleared_cookies) == 3
+        assert "login#state1#1640995200000" in cleared_cookies
+        assert "login#state2#1640995201000" in cleared_cookies
+        assert "login#state3#1640995202000" in cleared_cookies
+
+    def test_clear_oldest_login_state_cookie_ignores_malformed_cookie_names(self) -> None:
+        """Test _clear_oldest_login_state_cookie handles malformed login cookie names gracefully."""
+        from django.http import HttpResponse
+
+        request = self.factory.get("/login")
+        request.COOKIES = {
+            "login#state1": "encrypted_data_1",  # missing timestamp
+            "login#state2#invalid": "encrypted_data_2",  # invalid timestamp
+            "login#state3#1640995202000": "encrypted_data_3",  # valid - oldest
+            "login#state4#1640995203000": "encrypted_data_4",  # valid - middle
+            "login#state5#1640995204000": "encrypted_data_5",  # valid - newest
+        }
+        response = HttpResponse()
+
+        self.wristband_auth._clear_oldest_login_state_cookie(request, response)
+
+        # Should only process cookies with valid timestamp format
+        # With 5 total login cookies (>=3), it keeps 2 newest valid timestamps and clears the rest
+        cleared_cookies = [key for key, cookie in response.cookies.items() if cookie.get("max-age") == 0]
+        assert len(cleared_cookies) == 2
+        assert "login#state3#1640995202000" in cleared_cookies
+        assert "login#state4#1640995203000" in cleared_cookies
+
+    def test_clear_oldest_login_state_cookie_with_secure_cookies_disabled(self) -> None:
+        """Test _clear_oldest_login_state_cookie respects dangerously_disable_secure_cookies setting."""
+        from django.http import HttpResponse
+
+        # Create config with secure cookies disabled
+        insecure_config = AuthConfig(
+            client_id="test_client_id",
+            client_secret="test_client_secret",
+            login_state_secret=test_login_state_secret,
+            login_url="https://auth.example.com/login",
+            redirect_uri="https://app.example.com/callback",
+            wristband_application_vanity_domain="auth.example.com",
+            dangerously_disable_secure_cookies=True,
+        )
+        insecure_auth = WristbandAuth(insecure_config)
+
+        request = self.factory.get("/login")
+        request.COOKIES = {
+            "login#state1#1640995200000": "encrypted_data_1",
+            "login#state2#1640995201000": "encrypted_data_2",
+            "login#state3#1640995202000": "encrypted_data_3",
+        }
+        response = HttpResponse()
+
+        insecure_auth._clear_oldest_login_state_cookie(request, response)
+
+        # Verify the cleared cookie has secure=False
+        cleared_cookies = [key for key, cookie in response.cookies.items() if cookie.get("max-age") == 0]
+        assert len(cleared_cookies) == 1
+        cleared_cookie = response.cookies[cleared_cookies[0]]
+        # When secure=False, Django doesn't set the secure attribute, so it's falsy (empty string)
+        assert not cleared_cookie.get("secure")
+
+    def test_clear_oldest_login_state_cookie_ignores_non_login_cookies(self) -> None:
+        """Test _clear_oldest_login_state_cookie only processes login state cookies."""
+        from django.http import HttpResponse
+
+        request = self.factory.get("/login")
+        request.COOKIES = {
+            "login#state1#1640995200000": "encrypted_data_1",
+            "login#state2#1640995201000": "encrypted_data_2",
+            "login#state3#1640995202000": "encrypted_data_3",
+            "session_id": "session_value",
+            "csrf_token": "csrf_value",
+            "other_login_like": "other_value",  # doesn't start with exact prefix
+        }
+        response = HttpResponse()
+
+        self.wristband_auth._clear_oldest_login_state_cookie(request, response)
+
+        # Only login state cookies should be considered
+        cleared_cookies = [key for key, cookie in response.cookies.items() if cookie.get("max-age") == 0]
+        assert len(cleared_cookies) == 1
+        assert cleared_cookies[0].startswith("login#")
+
+        # Non-login cookies should not be affected
+        assert "session_id" not in cleared_cookies
+        assert "csrf_token" not in cleared_cookies
+        assert "other_login_like" not in cleared_cookies
