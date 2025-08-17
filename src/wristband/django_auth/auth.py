@@ -575,8 +575,7 @@ class WristbandAuth:
     def _create_login_state_cookie(self, response: HttpResponse, state: str, encrypted_data: str) -> None:
         """Create login state cookie"""
         cookie_name = (
-            f"{self._login_state_cookie_prefix}{state}"
-            f"{self._login_state_cookie_separator}{int(time.time() * 1000)}"
+            f"{self._login_state_cookie_prefix}{state}" f"{self._login_state_cookie_separator}{int(time.time() * 1000)}"
         )
         response.set_cookie(
             key=cookie_name,
