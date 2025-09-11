@@ -11,7 +11,7 @@ import base64
 import httpx
 
 from .exceptions import InvalidGrantError, WristbandError
-from .models import TokenResponse, UserInfo
+from .models import SdkConfiguration, TokenResponse, UserInfo
 
 
 class WristbandApiClient:
@@ -62,6 +62,7 @@ class WristbandApiClient:
         credentials: str = f"{client_id}:{client_secret}"
         encoded_credentials: str = base64.b64encode(credentials.encode("utf-8")).decode("utf-8")
 
+        self.client_id = client_id
         self.base_url: str = f"https://{wristband_application_vanity_domain}/api/v1"
         self.headers: dict[str, str] = {
             "Authorization": f"Basic {encoded_credentials}",
@@ -70,6 +71,32 @@ class WristbandApiClient:
 
         # Initialize httpx client with default headers and timeout
         self.client = httpx.Client(headers=self.headers, timeout=15.0)
+
+    def get_sdk_configuration(self) -> SdkConfiguration:
+        """
+        Retrieves the SDK configuration from Wristband's SDK Auto-Configuration Endpoint.
+
+        Returns:
+            SdkConfiguration: The SDK configuration containing auto-configurable values.
+
+        Raises:
+            WristbandError: If the request fails or returns an error response.
+            httpx.HTTPStatusError: For HTTP errors during the request.
+        """
+        try:
+            response = self.client.get(
+                f"{self.base_url}/clients/{self.client_id}/sdk-configuration",
+                headers={
+                    "Content-Type": "application/json",
+                    "Accept": "application/json",
+                },
+            )
+
+            response.raise_for_status()
+            return SdkConfiguration.from_api_response(response.json())
+
+        except Exception as e:
+            raise WristbandError("unexpected_error", str(e))
 
     def get_tokens(self, code: str, redirect_uri: str, code_verifier: str) -> TokenResponse:
         """

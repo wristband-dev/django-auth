@@ -1,5 +1,6 @@
 from unittest.mock import patch
 
+import pytest
 from django.conf import settings
 from django.test import RequestFactory
 
@@ -33,6 +34,7 @@ class TestWristbandAuthLogout:
             login_url="https://auth.example.com/login",
             redirect_uri="https://app.example.com/callback",
             wristband_application_vanity_domain="auth.example.com",
+            auto_configure_enabled=False,
         )
         self.wristband_auth = WristbandAuth(self.auth_config)
         self.factory = RequestFactory()
@@ -46,7 +48,7 @@ class TestWristbandAuthLogout:
             redirect_url="https://app.example.com/logged-out",
         )
 
-        with patch.object(self.wristband_auth.wristband_api, "revoke_refresh_token"):
+        with patch.object(self.wristband_auth._wristband_api, "revoke_refresh_token"):
             response = self.wristband_auth.logout(request, logout_config)
 
         # Should use config tenant custom domain (priority 1)
@@ -63,7 +65,7 @@ class TestWristbandAuthLogout:
             tenant_domain_name="config-tenant", redirect_url="https://app.example.com/logged-out"
         )
 
-        with patch.object(self.wristband_auth.wristband_api, "revoke_refresh_token"):
+        with patch.object(self.wristband_auth._wristband_api, "revoke_refresh_token"):
             response = self.wristband_auth.logout(request, logout_config)
 
         # Should use config tenant domain (priority 2)
@@ -78,7 +80,7 @@ class TestWristbandAuthLogout:
         request = self.factory.get("/logout?tenant_domain=tenant1&tenant_custom_domain=tenant1.custom.com")
         logout_config = LogoutConfig()
 
-        with patch.object(self.wristband_auth.wristband_api, "revoke_refresh_token"):
+        with patch.object(self.wristband_auth._wristband_api, "revoke_refresh_token"):
             response = self.wristband_auth.logout(request, logout_config)
 
         # Should use query tenant custom domain (priority 3)
@@ -90,7 +92,7 @@ class TestWristbandAuthLogout:
         request = self.factory.get("/logout?tenant_domain=tenant1")
         logout_config = LogoutConfig()
 
-        with patch.object(self.wristband_auth.wristband_api, "revoke_refresh_token"):
+        with patch.object(self.wristband_auth._wristband_api, "revoke_refresh_token"):
             response = self.wristband_auth.logout(request, logout_config)
 
         # Should use query tenant domain (priority 4)
@@ -108,6 +110,7 @@ class TestWristbandAuthLogout:
             wristband_application_vanity_domain="auth.example.com",
             parse_tenant_from_root_domain="auth.example.com",
             is_application_custom_domain_active=True,  # Uses "." separator
+            auto_configure_enabled=False,
         )
         wristband_auth = WristbandAuth(config_with_subdomain)
 
@@ -115,7 +118,7 @@ class TestWristbandAuthLogout:
         logout_config = LogoutConfig()
 
         with patch.object(request, "get_host", return_value="tenant1.auth.example.com"):
-            with patch.object(wristband_auth.wristband_api, "revoke_refresh_token"):
+            with patch.object(wristband_auth._wristband_api, "revoke_refresh_token"):
                 response = wristband_auth.logout(request, logout_config)
 
         # Should use subdomain with "." separator
@@ -127,7 +130,7 @@ class TestWristbandAuthLogout:
         request = self.factory.get("/logout")
         logout_config = LogoutConfig()
 
-        with patch.object(self.wristband_auth.wristband_api, "revoke_refresh_token"):
+        with patch.object(self.wristband_auth._wristband_api, "revoke_refresh_token"):
             response = self.wristband_auth.logout(request, logout_config)
 
         # Should fallback to app login URL
@@ -148,13 +151,14 @@ class TestWristbandAuthLogout:
             redirect_uri="https://app.example.com/callback",
             wristband_application_vanity_domain="auth.example.com",
             custom_application_login_page_url=custom_url,
+            auto_configure_enabled=False,
         )
         wristband_auth = WristbandAuth(config_with_custom)
 
         request = self.factory.get("/logout")
         logout_config = LogoutConfig()
 
-        with patch.object(wristband_auth.wristband_api, "revoke_refresh_token"):
+        with patch.object(wristband_auth._wristband_api, "revoke_refresh_token"):
             response = wristband_auth.logout(request, logout_config)
 
         # Should use custom login page as fallback
@@ -166,7 +170,7 @@ class TestWristbandAuthLogout:
         request = self.factory.get("/logout")
         logout_config = LogoutConfig(redirect_url="https://app.example.com/goodbye")
 
-        with patch.object(self.wristband_auth.wristband_api, "revoke_refresh_token"):
+        with patch.object(self.wristband_auth._wristband_api, "revoke_refresh_token"):
             response = self.wristband_auth.logout(request, logout_config)
 
         # Should use config redirect_url instead of app login fallback
@@ -178,7 +182,7 @@ class TestWristbandAuthLogout:
         request = self.factory.get("/logout?tenant_domain=tenant1")
         logout_config = LogoutConfig(refresh_token="valid_refresh_token")
 
-        with patch.object(self.wristband_auth.wristband_api, "revoke_refresh_token") as mock_revoke:
+        with patch.object(self.wristband_auth._wristband_api, "revoke_refresh_token") as mock_revoke:
             response = self.wristband_auth.logout(request, logout_config)
 
         # Should call revoke_refresh_token
@@ -193,7 +197,7 @@ class TestWristbandAuthLogout:
         request = self.factory.get("/logout?tenant_domain=tenant1")
         logout_config = LogoutConfig(refresh_token="invalid_refresh_token")
 
-        with patch.object(self.wristband_auth.wristband_api, "revoke_refresh_token") as mock_revoke:
+        with patch.object(self.wristband_auth._wristband_api, "revoke_refresh_token") as mock_revoke:
             mock_revoke.side_effect = Exception("Revocation failed")
 
             # Should not raise exception, just log warning
@@ -208,7 +212,7 @@ class TestWristbandAuthLogout:
         request = self.factory.get("/logout?tenant_domain=tenant1")
         logout_config = LogoutConfig()
 
-        with patch.object(self.wristband_auth.wristband_api, "revoke_refresh_token") as mock_revoke:
+        with patch.object(self.wristband_auth._wristband_api, "revoke_refresh_token") as mock_revoke:
             response = self.wristband_auth.logout(request, logout_config)
 
         # Should not call revoke_refresh_token
@@ -223,7 +227,7 @@ class TestWristbandAuthLogout:
         request = self.factory.get("/logout?tenant_domain=tenant1")
         logout_config = LogoutConfig(redirect_url="https://app.example.com/farewell")
 
-        with patch.object(self.wristband_auth.wristband_api, "revoke_refresh_token"):
+        with patch.object(self.wristband_auth._wristband_api, "revoke_refresh_token"):
             response = self.wristband_auth.logout(request, logout_config)
 
         expected_url = (
@@ -237,7 +241,7 @@ class TestWristbandAuthLogout:
         request = self.factory.get("/logout?tenant_domain=tenant1")
         logout_config = LogoutConfig()
 
-        with patch.object(self.wristband_auth.wristband_api, "revoke_refresh_token"):
+        with patch.object(self.wristband_auth._wristband_api, "revoke_refresh_token"):
             response = self.wristband_auth.logout(request, logout_config)
 
         expected_url = "https://tenant1-auth.example.com/api/v1/logout?client_id=test_client_id"
@@ -253,13 +257,14 @@ class TestWristbandAuthLogout:
             redirect_uri="https://app.example.com/callback",
             wristband_application_vanity_domain="auth.example.com",
             is_application_custom_domain_active=True,
+            auto_configure_enabled=False,
         )
         wristband_auth = WristbandAuth(config_with_custom_domain)
 
         request = self.factory.get("/logout?tenant_domain=tenant1")
         logout_config = LogoutConfig()
 
-        with patch.object(wristband_auth.wristband_api, "revoke_refresh_token"):
+        with patch.object(wristband_auth._wristband_api, "revoke_refresh_token"):
             response = wristband_auth.logout(request, logout_config)
 
         # Should use "." separator instead of "-"
@@ -271,7 +276,7 @@ class TestWristbandAuthLogout:
         request = self.factory.get("/logout?tenant_domain=tenant1")
         logout_config = LogoutConfig()
 
-        with patch.object(self.wristband_auth.wristband_api, "revoke_refresh_token"):
+        with patch.object(self.wristband_auth._wristband_api, "revoke_refresh_token"):
             response = self.wristband_auth.logout(request, logout_config)
 
         # Verify security headers are set
@@ -286,9 +291,133 @@ class TestWristbandAuthLogout:
             tenant_domain_name="   ",  # Whitespace only should be ignored
         )
 
-        with patch.object(self.wristband_auth.wristband_api, "revoke_refresh_token"):
+        with patch.object(self.wristband_auth._wristband_api, "revoke_refresh_token"):
             response = self.wristband_auth.logout(request, logout_config)
 
         # Should fall back to query parameter since config values are empty/whitespace
         expected_url = "https://tenant1-auth.example.com/api/v1/logout?client_id=test_client_id"
+        assert_redirect_no_cache(response, expected_url)
+
+    def test_logout_builds_logout_path_with_state(self) -> None:
+        """Test logout builds correct path with state parameter."""
+        request = self.factory.get("/logout?tenant_domain=tenant1")
+        logout_config = LogoutConfig(state="custom_state_value")
+
+        with patch.object(self.wristband_auth._wristband_api, "revoke_refresh_token"):
+            response = self.wristband_auth.logout(request, logout_config)
+
+        expected_url = (
+            "https://tenant1-auth.example.com/api/v1/logout?client_id=test_client_id" "&state=custom_state_value"
+        )
+        assert_redirect_no_cache(response, expected_url)
+
+    def test_logout_builds_logout_path_with_redirect_url_and_state(self) -> None:
+        """Test logout builds correct path with both redirect_url and state parameters."""
+        request = self.factory.get("/logout?tenant_domain=tenant1")
+        logout_config = LogoutConfig(redirect_url="https://app.example.com/farewell", state="custom_state_value")
+
+        with patch.object(self.wristband_auth._wristband_api, "revoke_refresh_token"):
+            response = self.wristband_auth.logout(request, logout_config)
+
+        expected_url = (
+            "https://tenant1-auth.example.com/api/v1/logout?client_id=test_client_id"
+            "&redirect_url=https://app.example.com/farewell&state=custom_state_value"
+        )
+        assert_redirect_no_cache(response, expected_url)
+
+    def test_logout_ignores_empty_string_state(self) -> None:
+        """Test logout ignores empty string state parameter."""
+        request = self.factory.get("/logout?tenant_domain=tenant1")
+        logout_config = LogoutConfig(
+            redirect_url="https://app.example.com/farewell", state=""  # Empty string should be ignored
+        )
+
+        with patch.object(self.wristband_auth._wristband_api, "revoke_refresh_token"):
+            response = self.wristband_auth.logout(request, logout_config)
+
+        expected_url = (
+            "https://tenant1-auth.example.com/api/v1/logout?client_id=test_client_id"
+            "&redirect_url=https://app.example.com/farewell"
+        )
+        assert_redirect_no_cache(response, expected_url)
+
+    def test_logout_ignores_whitespace_only_state(self) -> None:
+        """Test logout ignores whitespace-only state parameter."""
+        request = self.factory.get("/logout?tenant_domain=tenant1")
+        logout_config = LogoutConfig(
+            redirect_url="https://app.example.com/farewell", state="   "  # Whitespace only should be ignored
+        )
+
+        with patch.object(self.wristband_auth._wristband_api, "revoke_refresh_token"):
+            response = self.wristband_auth.logout(request, logout_config)
+
+        expected_url = (
+            "https://tenant1-auth.example.com/api/v1/logout?client_id=test_client_id"
+            "&redirect_url=https://app.example.com/farewell"
+        )
+        assert_redirect_no_cache(response, expected_url)
+
+    def test_logout_with_state_only_no_redirect_url(self) -> None:
+        """Test logout includes state parameter even when no redirect_url is provided."""
+        request = self.factory.get("/logout?tenant_domain=tenant1")
+        logout_config = LogoutConfig(state="state_without_redirect")
+
+        with patch.object(self.wristband_auth._wristband_api, "revoke_refresh_token"):
+            response = self.wristband_auth.logout(request, logout_config)
+
+        expected_url = (
+            "https://tenant1-auth.example.com/api/v1/logout?client_id=test_client_id" "&state=state_without_redirect"
+        )
+        assert_redirect_no_cache(response, expected_url)
+
+    def test_logout_with_state_and_tenant_custom_domain(self) -> None:
+        """Test logout includes state parameter with tenant custom domain."""
+        request = self.factory.get("/logout?tenant_domain=tenant1&tenant_custom_domain=tenant1.custom.com")
+        logout_config = LogoutConfig(state="custom_domain_state")
+
+        with patch.object(self.wristband_auth._wristband_api, "revoke_refresh_token"):
+            response = self.wristband_auth.logout(request, logout_config)
+
+        expected_url = "https://tenant1.custom.com/api/v1/logout?client_id=test_client_id" "&state=custom_domain_state"
+        assert_redirect_no_cache(response, expected_url)
+
+    def test_logout_with_state_special_characters_url_encoded(self) -> None:
+        """Test logout properly handles state with special characters that need URL encoding."""
+        request = self.factory.get("/logout?tenant_domain=tenant1")
+        logout_config = LogoutConfig(state="state with spaces & symbols")
+
+        with patch.object(self.wristband_auth._wristband_api, "revoke_refresh_token"):
+            response = self.wristband_auth.logout(request, logout_config)
+
+        # Note: The state is passed directly to the URL, so special characters should be properly encoded
+        expected_url = (
+            "https://tenant1-auth.example.com/api/v1/logout?client_id=test_client_id"
+            "&state=state with spaces & symbols"
+        )
+        assert_redirect_no_cache(response, expected_url)
+
+    def test_logout_with_state_too_long_raises_value_error(self) -> None:
+        """Test logout raises ValueError when state exceeds 512 characters."""
+        request = self.factory.get("/logout?tenant_domain=tenant1")
+        # Create a state string longer than 512 characters
+        long_state = "a" * 513
+        logout_config = LogoutConfig(state=long_state)
+
+        with pytest.raises(ValueError, match="The \\[state\\] logout config cannot exceed 512 characters."):
+            self.wristband_auth.logout(request, logout_config)
+
+    def test_logout_with_state_exactly_512_characters_succeeds(self) -> None:
+        """Test logout succeeds when state is exactly 512 characters."""
+        request = self.factory.get("/logout?tenant_domain=tenant1")
+        # Create a state string exactly 512 characters
+        exact_state = "a" * 512
+        logout_config = LogoutConfig(state=exact_state)
+
+        with patch.object(self.wristband_auth._wristband_api, "revoke_refresh_token"):
+            response = self.wristband_auth.logout(request, logout_config)
+
+        # Should succeed and include the state
+        expected_url = (
+            f"https://tenant1-auth.example.com/api/v1/logout?client_id=test_client_id" f"&state={exact_state}"
+        )
         assert_redirect_no_cache(response, expected_url)

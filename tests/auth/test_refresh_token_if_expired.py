@@ -90,7 +90,7 @@ class TestWristbandAuthRefreshTokenIfExpired:
             scope="openid offline_access email",
         )
 
-        with patch.object(self.wristband_auth.wristband_api, "refresh_token", return_value=mock_token_response):
+        with patch.object(self.wristband_auth._wristband_api, "refresh_token", return_value=mock_token_response):
             result = self.wristband_auth.refresh_token_if_expired(refresh_token, expires_at)
 
         assert result is not None
@@ -102,7 +102,7 @@ class TestWristbandAuthRefreshTokenIfExpired:
         assert result.refresh_token == "new_refresh_token"
 
     @patch("wristband.django_auth.auth.time.time")
-    def test_refresh_token_if_expired_with_no_token_expiration_buffer(self, mock_time) -> None:
+    def test_refresh_token_if_expired_with_default_token_expiration_buffer(self, mock_time) -> None:
         """Test token refresh with no expiry buffer configured."""
         mock_time.return_value = 1640995200.0
 
@@ -114,7 +114,6 @@ class TestWristbandAuthRefreshTokenIfExpired:
             login_url="https://auth.example.com/login",
             redirect_uri="https://app.example.com/callback",
             wristband_application_vanity_domain="auth.example.com",
-            token_expiration_buffer=None,
         )
         wristband_auth = WristbandAuth(config_no_buffer)
 
@@ -130,19 +129,19 @@ class TestWristbandAuthRefreshTokenIfExpired:
             scope="openid offline_access email",
         )
 
-        with patch.object(wristband_auth.wristband_api, "refresh_token", return_value=mock_token_response):
+        with patch.object(wristband_auth._wristband_api, "refresh_token", return_value=mock_token_response):
             result = wristband_auth.refresh_token_if_expired(refresh_token, expires_at)
 
         assert result is not None
-        assert result.expires_in == 3600  # No buffer applied
-        assert result.expires_at == int((1640995200.0 + 3600) * 1000)
+        assert result.expires_in == 3540
+        assert result.expires_at == int((1640995200.0 + 3540) * 1000)
 
     def test_refresh_token_if_expired_invalid_grant_error_no_retry(self) -> None:
         """Test InvalidGrantError is raised immediately without retry."""
         refresh_token = "invalid_refresh_token"
         expires_at = int((datetime.now() - timedelta(hours=1)).timestamp() * 1000)
 
-        with patch.object(self.wristband_auth.wristband_api, "refresh_token") as mock_refresh:
+        with patch.object(self.wristband_auth._wristband_api, "refresh_token") as mock_refresh:
             mock_refresh.side_effect = InvalidGrantError("Invalid grant")
 
             with pytest.raises(InvalidGrantError, match="Invalid grant"):
@@ -164,7 +163,7 @@ class TestWristbandAuthRefreshTokenIfExpired:
         mock_http_error = httpx.HTTPStatusError("400 Bad Request", request=Mock(), response=mock_response)
         mock_http_error.response = mock_response
 
-        with patch.object(self.wristband_auth.wristband_api, "refresh_token") as mock_refresh:
+        with patch.object(self.wristband_auth._wristband_api, "refresh_token") as mock_refresh:
             mock_refresh.side_effect = mock_http_error
 
             with pytest.raises(WristbandError) as exc_info:
@@ -190,7 +189,7 @@ class TestWristbandAuthRefreshTokenIfExpired:
         mock_http_error = httpx.HTTPStatusError("401 Unauthorized", request=Mock(), response=mock_response)
         mock_http_error.response = mock_response
 
-        with patch.object(self.wristband_auth.wristband_api, "refresh_token") as mock_refresh:
+        with patch.object(self.wristband_auth._wristband_api, "refresh_token") as mock_refresh:
             mock_refresh.side_effect = mock_http_error
 
             with pytest.raises(WristbandError) as exc_info:
@@ -213,7 +212,7 @@ class TestWristbandAuthRefreshTokenIfExpired:
         mock_http_error = httpx.HTTPStatusError("500 Internal Server Error", request=Mock(), response=mock_response)
         mock_http_error.response = mock_response
 
-        with patch.object(self.wristband_auth.wristband_api, "refresh_token") as mock_refresh:
+        with patch.object(self.wristband_auth._wristband_api, "refresh_token") as mock_refresh:
             mock_refresh.side_effect = mock_http_error
 
             with pytest.raises(WristbandError) as exc_info:
@@ -254,7 +253,7 @@ class TestWristbandAuthRefreshTokenIfExpired:
             scope="openid offline_access email",
         )
 
-        with patch.object(self.wristband_auth.wristband_api, "refresh_token") as mock_refresh:
+        with patch.object(self.wristband_auth._wristband_api, "refresh_token") as mock_refresh:
             mock_refresh.side_effect = [mock_http_error, mock_token_response]
 
             result = self.wristband_auth.refresh_token_if_expired(refresh_token, expires_at)
@@ -271,7 +270,7 @@ class TestWristbandAuthRefreshTokenIfExpired:
 
         mock_http_error = httpx.RequestError("Network error")
 
-        with patch.object(self.wristband_auth.wristband_api, "refresh_token") as mock_refresh:
+        with patch.object(self.wristband_auth._wristband_api, "refresh_token") as mock_refresh:
             with patch("wristband.django_auth.auth.time.sleep"):
                 mock_refresh.side_effect = mock_http_error
 
@@ -288,7 +287,7 @@ class TestWristbandAuthRefreshTokenIfExpired:
         refresh_token = "valid_refresh_token"
         expires_at = int((datetime.now() - timedelta(hours=1)).timestamp() * 1000)
 
-        with patch.object(self.wristband_auth.wristband_api, "refresh_token") as mock_refresh:
+        with patch.object(self.wristband_auth._wristband_api, "refresh_token") as mock_refresh:
             with patch("wristband.django_auth.auth.time.sleep"):
                 # Use a generic Exception instead of ConnectionError
                 mock_refresh.side_effect = Exception("Generic error")
@@ -327,7 +326,7 @@ class TestWristbandAuthRefreshTokenIfExpired:
             scope="openid offline_access email",
         )
 
-        with patch.object(wristband_auth.wristband_api, "refresh_token", return_value=mock_token_response):
+        with patch.object(wristband_auth._wristband_api, "refresh_token", return_value=mock_token_response):
             with patch("wristband.django_auth.auth.time.time", return_value=1640995200.0):
                 result = wristband_auth.refresh_token_if_expired(refresh_token, expires_at)
 
@@ -350,7 +349,7 @@ class TestWristbandAuthRefreshTokenIfExpired:
             scope="openid offline_access email",
         )
 
-        with patch.object(self.wristband_auth.wristband_api, "refresh_token", return_value=mock_token_response):
+        with patch.object(self.wristband_auth._wristband_api, "refresh_token", return_value=mock_token_response):
             with patch("wristband.django_auth.auth.time.time", return_value=1640995200.0):
                 # Since expires_at is exactly now, it should be considered expired and refresh
                 result = self.wristband_auth.refresh_token_if_expired(refresh_token, expires_at)
@@ -387,7 +386,7 @@ class TestWristbandAuthRefreshTokenIfExpired:
             scope="openid offline_access email",
         )
 
-        with patch.object(wristband_auth.wristband_api, "refresh_token", return_value=mock_token_response):
+        with patch.object(wristband_auth._wristband_api, "refresh_token", return_value=mock_token_response):
             result = wristband_auth.refresh_token_if_expired(refresh_token, expires_at)
 
         assert result is not None

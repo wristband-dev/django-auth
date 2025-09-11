@@ -9,6 +9,7 @@ from wristband.django_auth.models import (
     LoginState,
     LogoutConfig,
     OAuthAuthorizeUrlConfig,
+    SdkConfiguration,
     TokenData,
     TokenResponse,
     UserInfo,
@@ -37,9 +38,10 @@ class TestAuthConfig:
         assert config.wristband_application_vanity_domain == "app.wristband.dev"
 
         # Test default values
+        assert config.auto_configure_enabled is True
         assert config.custom_application_login_page_url is None
         assert config.dangerously_disable_secure_cookies is False
-        assert config.is_application_custom_domain_active is False
+        assert config.is_application_custom_domain_active is None
         assert config.parse_tenant_from_root_domain is None
         assert config.scopes == ["openid", "offline_access", "email"]
         assert config.token_expiration_buffer == 60
@@ -47,6 +49,7 @@ class TestAuthConfig:
     def test_auth_config_all_fields(self):
         """Test AuthConfig with all fields specified."""
         config = AuthConfig(
+            auto_configure_enabled=False,
             client_id="test_client_id",
             client_secret="test_client_secret",
             login_state_secret="very_long_secret_key_for_encryption_123456789",
@@ -61,6 +64,7 @@ class TestAuthConfig:
             token_expiration_buffer=120,
         )
 
+        assert config.auto_configure_enabled is False
         assert config.custom_application_login_page_url == "https://custom.example.com/login"
         assert config.dangerously_disable_secure_cookies is True
         assert config.is_application_custom_domain_active is True
@@ -91,10 +95,88 @@ class TestAuthConfig:
             login_url="https://example.com/login",
             redirect_uri="https://example.com/callback",
             wristband_application_vanity_domain="app.wristband.dev",
-            token_expiration_buffer=None,
         )
 
-        assert config.token_expiration_buffer is None
+        assert config.token_expiration_buffer == 60
+
+
+class TestSdkConfiguration:
+    """Test cases for SdkConfiguration dataclass."""
+
+    def test_sdk_configuration_creation(self):
+        """Test SdkConfiguration creation with all fields."""
+        config = SdkConfiguration(
+            login_url="https://auth.wristband.dev/api/v1/oauth2/authorize",
+            redirect_uri="https://example.com/callback",
+            is_application_custom_domain_active=True,
+            custom_application_login_page_url="https://custom.example.com/login",
+            login_url_tenant_domain_suffix=".tenant.wristband.dev",
+        )
+
+        assert config.login_url == "https://auth.wristband.dev/api/v1/oauth2/authorize"
+        assert config.redirect_uri == "https://example.com/callback"
+        assert config.is_application_custom_domain_active is True
+        assert config.custom_application_login_page_url == "https://custom.example.com/login"
+        assert config.login_url_tenant_domain_suffix == ".tenant.wristband.dev"
+
+    def test_sdk_configuration_minimal_required_fields(self):
+        """Test SdkConfiguration with only required fields."""
+        config = SdkConfiguration(
+            login_url="https://auth.wristband.dev/api/v1/oauth2/authorize",
+            redirect_uri="https://example.com/callback",
+            is_application_custom_domain_active=False,
+        )
+
+        assert config.login_url == "https://auth.wristband.dev/api/v1/oauth2/authorize"
+        assert config.redirect_uri == "https://example.com/callback"
+        assert config.is_application_custom_domain_active is False
+        assert config.custom_application_login_page_url is None
+        assert config.login_url_tenant_domain_suffix is None
+
+    def test_sdk_configuration_from_api_response(self):
+        """Test SdkConfiguration.from_api_response method."""
+        api_response = {
+            "loginUrl": "https://auth.wristband.dev/api/v1/oauth2/authorize",
+            "redirectUri": "https://example.com/callback",
+            "isApplicationCustomDomainActive": True,
+            "customApplicationLoginPageUrl": "https://custom.example.com/login",
+            "loginUrlTenantDomainSuffix": ".tenant.wristband.dev",
+        }
+
+        config = SdkConfiguration.from_api_response(api_response)
+
+        assert config.login_url == "https://auth.wristband.dev/api/v1/oauth2/authorize"
+        assert config.redirect_uri == "https://example.com/callback"
+        assert config.is_application_custom_domain_active is True
+        assert config.custom_application_login_page_url == "https://custom.example.com/login"
+        assert config.login_url_tenant_domain_suffix == ".tenant.wristband.dev"
+
+    def test_sdk_configuration_from_api_response_minimal(self):
+        """Test SdkConfiguration.from_api_response with minimal response."""
+        api_response = {
+            "loginUrl": "https://auth.wristband.dev/api/v1/oauth2/authorize",
+            "redirectUri": "https://example.com/callback",
+        }
+
+        config = SdkConfiguration.from_api_response(api_response)
+
+        assert config.login_url == "https://auth.wristband.dev/api/v1/oauth2/authorize"
+        assert config.redirect_uri == "https://example.com/callback"
+        assert config.is_application_custom_domain_active is False  # Default from .get()
+        assert config.custom_application_login_page_url is None
+        assert config.login_url_tenant_domain_suffix is None
+
+    def test_sdk_configuration_from_api_response_with_false_custom_domain(self):
+        """Test SdkConfiguration.from_api_response with explicit False for custom domain."""
+        api_response = {
+            "loginUrl": "https://auth.wristband.dev/api/v1/oauth2/authorize",
+            "redirectUri": "https://example.com/callback",
+            "isApplicationCustomDomainActive": False,
+        }
+
+        config = SdkConfiguration.from_api_response(api_response)
+
+        assert config.is_application_custom_domain_active is False
 
 
 class TestLoginState:
@@ -184,6 +266,7 @@ class TestLoginConfig:
         assert config.custom_state is None
         assert config.default_tenant_custom_domain is None
         assert config.default_tenant_domain is None
+        assert config.return_url is None
 
     def test_login_config_all_fields(self):
         """Test LoginConfig with all fields specified."""
@@ -192,11 +275,13 @@ class TestLoginConfig:
             custom_state=custom_state,
             default_tenant_custom_domain="custom.example.com",
             default_tenant_domain="tenant1",
+            return_url="https://myapp.com",
         )
 
         assert config.custom_state == custom_state
         assert config.default_tenant_custom_domain == "custom.example.com"
         assert config.default_tenant_domain == "tenant1"
+        assert config.return_url == "https://myapp.com"
 
 
 class TestOAuthAuthorizeUrlConfig:
@@ -204,40 +289,41 @@ class TestOAuthAuthorizeUrlConfig:
 
     def test_oauth_authorize_url_config_creation(self):
         """Test OAuthAuthorizeUrlConfig creation."""
-        login_state = LoginState(
-            state="test_state",
+        config = OAuthAuthorizeUrlConfig(
+            client_id="test_client_id",
             code_verifier="test_code_verifier",
             redirect_uri="https://example.com/callback",
-            return_url=None,
-            custom_state=None,
-        )
-
-        config = OAuthAuthorizeUrlConfig(
-            login_state=login_state,
+            scopes=["openid", "email"],
+            state="test_state",
+            wristband_application_vanity_domain="app.wristband.dev",
             tenant_domain_name="tenant1",
             tenant_custom_domain="custom.example.com",
             default_tenant_domain_name="default_tenant",
             default_tenant_custom_domain="default.example.com",
+            is_application_custom_domain_active=True,
         )
 
-        assert config.login_state == login_state
+        assert config.client_id == "test_client_id"
+        assert config.code_verifier == "test_code_verifier"
+        assert config.redirect_uri == "https://example.com/callback"
+        assert config.scopes == ["openid", "email"]
+        assert config.state == "test_state"
+        assert config.wristband_application_vanity_domain == "app.wristband.dev"
         assert config.tenant_domain_name == "tenant1"
         assert config.tenant_custom_domain == "custom.example.com"
         assert config.default_tenant_domain_name == "default_tenant"
         assert config.default_tenant_custom_domain == "default.example.com"
+        assert config.is_application_custom_domain_active is True
 
     def test_oauth_authorize_url_config_with_none_values(self):
-        """Test OAuthAuthorizeUrlConfig with None values."""
-        login_state = LoginState(
-            state="test_state",
+        """Test OAuthAuthorizeUrlConfig with None values for optional fields."""
+        config = OAuthAuthorizeUrlConfig(
+            client_id="test_client_id",
             code_verifier="test_code_verifier",
             redirect_uri="https://example.com/callback",
-            return_url=None,
-            custom_state=None,
-        )
-
-        config = OAuthAuthorizeUrlConfig(
-            login_state=login_state,
+            scopes=["openid"],
+            state="test_state",
+            wristband_application_vanity_domain="app.wristband.dev",
             tenant_domain_name=None,
             tenant_custom_domain=None,
             default_tenant_domain_name=None,
@@ -248,6 +334,32 @@ class TestOAuthAuthorizeUrlConfig:
         assert config.tenant_custom_domain is None
         assert config.default_tenant_domain_name is None
         assert config.default_tenant_custom_domain is None
+        assert config.is_application_custom_domain_active is False  # Default value
+
+    def test_oauth_authorize_url_config_minimal_required_fields(self):
+        """Test OAuthAuthorizeUrlConfig with only required fields."""
+        config = OAuthAuthorizeUrlConfig(
+            client_id="test_client_id",
+            code_verifier="test_code_verifier",
+            redirect_uri="https://example.com/callback",
+            scopes=["openid"],
+            state="test_state",
+            wristband_application_vanity_domain="app.wristband.dev",
+        )
+
+        assert config.client_id == "test_client_id"
+        assert config.code_verifier == "test_code_verifier"
+        assert config.redirect_uri == "https://example.com/callback"
+        assert config.scopes == ["openid"]
+        assert config.state == "test_state"
+        assert config.wristband_application_vanity_domain == "app.wristband.dev"
+
+        # Check default values for optional fields
+        assert config.default_tenant_custom_domain is None
+        assert config.default_tenant_domain_name is None
+        assert config.tenant_custom_domain is None
+        assert config.tenant_domain_name is None
+        assert config.is_application_custom_domain_active is False
 
 
 class TestCallbackResultType:
@@ -495,6 +607,7 @@ class TestLogoutConfig:
 
         assert config.redirect_url is None
         assert config.refresh_token is None
+        assert config.state is None
         assert config.tenant_custom_domain is None
         assert config.tenant_domain_name is None
 
@@ -503,12 +616,14 @@ class TestLogoutConfig:
         config = LogoutConfig(
             redirect_url="https://example.com/goodbye",
             refresh_token="refresh_token_123",
+            state="user_initiated_logout",
             tenant_custom_domain="custom.example.com",
             tenant_domain_name="tenant1",
         )
 
         assert config.redirect_url == "https://example.com/goodbye"
         assert config.refresh_token == "refresh_token_123"
+        assert config.state == "user_initiated_logout"
         assert config.tenant_custom_domain == "custom.example.com"
         assert config.tenant_domain_name == "tenant1"
 
@@ -518,6 +633,7 @@ class TestLogoutConfig:
 
         assert config.redirect_url is None
         assert config.refresh_token == "refresh_token_123"
+        assert config.state is None
         assert config.tenant_custom_domain is None
         assert config.tenant_domain_name == "tenant1"
 

@@ -38,6 +38,7 @@ class TestWristbandAuthCallback:
             redirect_uri="https://app.example.com/callback",
             wristband_application_vanity_domain="auth.example.com",
             token_expiration_buffer=60,
+            auto_configure_enabled=False,
         )
         self.wristband_auth = WristbandAuth(self.auth_config)
         self.factory = RequestFactory()
@@ -70,6 +71,7 @@ class TestWristbandAuthCallback:
             redirect_uri="https://{tenant_domain}.app.example.com/callback",
             wristband_application_vanity_domain="auth.example.com",
             parse_tenant_from_root_domain="auth.example.com",
+            auto_configure_enabled=False,
         )
         wristband_auth = WristbandAuth(config_with_subdomain)
 
@@ -212,8 +214,8 @@ class TestWristbandAuthCallback:
         # Mock user info
         mock_user_info = UserInfo(sub="user_123", email="user@example.com", email_verified=True, username="testuser")
 
-        with patch.object(self.wristband_auth.wristband_api, "get_tokens", return_value=mock_token_response):
-            with patch.object(self.wristband_auth.wristband_api, "get_userinfo", return_value=mock_user_info):
+        with patch.object(self.wristband_auth._wristband_api, "get_tokens", return_value=mock_token_response):
+            with patch.object(self.wristband_auth._wristband_api, "get_userinfo", return_value=mock_user_info):
                 result = self.wristband_auth.callback(request)
 
         assert result.type == CallbackResultType.COMPLETED
@@ -265,8 +267,8 @@ class TestWristbandAuthCallback:
 
         mock_user_info = UserInfo(sub="user_123", email="user@example.com", email_verified=True, username="testuser")
 
-        with patch.object(self.wristband_auth.wristband_api, "get_tokens", return_value=mock_token_response):
-            with patch.object(self.wristband_auth.wristband_api, "get_userinfo", return_value=mock_user_info):
+        with patch.object(self.wristband_auth._wristband_api, "get_tokens", return_value=mock_token_response):
+            with patch.object(self.wristband_auth._wristband_api, "get_userinfo", return_value=mock_user_info):
                 result = self.wristband_auth.callback(request)
 
         assert result.type == CallbackResultType.COMPLETED
@@ -285,7 +287,7 @@ class TestWristbandAuthCallback:
             login_url="https://auth.example.com/login",
             redirect_uri="https://app.example.com/callback",
             wristband_application_vanity_domain="auth.example.com",
-            token_expiration_buffer=None,
+            auto_configure_enabled=False,
         )
         wristband_auth = WristbandAuth(config_no_buffer)
 
@@ -314,14 +316,13 @@ class TestWristbandAuthCallback:
 
         mock_user_info = UserInfo(sub="user_123", email="user@example.com", email_verified=True, username="testuser")
 
-        with patch.object(wristband_auth.wristband_api, "get_tokens", return_value=mock_token_response):
-            with patch.object(wristband_auth.wristband_api, "get_userinfo", return_value=mock_user_info):
+        with patch.object(wristband_auth._wristband_api, "get_tokens", return_value=mock_token_response):
+            with patch.object(wristband_auth._wristband_api, "get_userinfo", return_value=mock_user_info):
                 result = wristband_auth.callback(request)
 
-        # Should not apply any buffer
         assert result.callback_data is not None
-        assert result.callback_data.expires_in == 3600  # No buffer applied
-        assert result.callback_data.expires_at == int((1640995200.0 + 3600) * 1000)
+        assert result.callback_data.expires_in == 3540
+        assert result.callback_data.expires_at == int((1640995200.0 + 3540) * 1000)
 
     def test_callback_invalid_grant_error_returns_redirect(self) -> None:
         """Test callback returns redirect when InvalidGrantError occurs during token exchange."""
@@ -339,7 +340,7 @@ class TestWristbandAuthCallback:
         encrypted_cookie = self.wristband_auth._encrypt_login_state(login_state)
         request.COOKIES = {"login#test_state#1640995200000": encrypted_cookie}
 
-        with patch.object(self.wristband_auth.wristband_api, "get_tokens") as mock_get_tokens:
+        with patch.object(self.wristband_auth._wristband_api, "get_tokens") as mock_get_tokens:
             mock_get_tokens.side_effect = InvalidGrantError("Invalid authorization code")
 
             result = self.wristband_auth.callback(request)
@@ -364,7 +365,7 @@ class TestWristbandAuthCallback:
         encrypted_cookie = self.wristband_auth._encrypt_login_state(login_state)
         request.COOKIES = {"login#test_state#1640995200000": encrypted_cookie}
 
-        with patch.object(self.wristband_auth.wristband_api, "get_tokens") as mock_get_tokens:
+        with patch.object(self.wristband_auth._wristband_api, "get_tokens") as mock_get_tokens:
             mock_get_tokens.side_effect = Exception("Network error")
 
             with pytest.raises(Exception, match="Network error"):
@@ -377,7 +378,7 @@ class TestWristbandAuthCallback:
         )
 
         with pytest.raises(
-            TypeError, match="Duplicate query parameter \\[code\\] passed from Wristband during callback"
+            TypeError, match="More than one instance of the query parameter \\[code\\] was present in the request"
         ):
             self.wristband_auth.callback(request)
 
@@ -392,6 +393,7 @@ class TestWristbandAuthCallback:
             wristband_application_vanity_domain="auth.example.com",
             parse_tenant_from_root_domain="auth.example.com",
             token_expiration_buffer=60,
+            auto_configure_enabled=False,
         )
         wristband_auth = WristbandAuth(config_with_subdomain)
 
@@ -420,8 +422,8 @@ class TestWristbandAuthCallback:
 
         mock_user_info = UserInfo(sub="user_123", email="user@example.com", email_verified=True, username="testuser")
 
-        with patch.object(wristband_auth.wristband_api, "get_tokens", return_value=mock_token_response):
-            with patch.object(wristband_auth.wristband_api, "get_userinfo", return_value=mock_user_info):
+        with patch.object(wristband_auth._wristband_api, "get_tokens", return_value=mock_token_response):
+            with patch.object(wristband_auth._wristband_api, "get_userinfo", return_value=mock_user_info):
                 with patch("wristband.django_auth.auth.time.time", return_value=1640995200.0):
                     result = wristband_auth.callback(request)
 
@@ -455,6 +457,7 @@ class TestWristbandAuthCallback:
             redirect_uri="https://{tenant_domain}.app.example.com/callback",
             wristband_application_vanity_domain="auth.example.com",
             parse_tenant_from_root_domain="auth.example.com",
+            auto_configure_enabled=False,
         )
         wristband_auth = WristbandAuth(config_with_subdomain)
 
@@ -480,6 +483,7 @@ class TestWristbandAuthCallback:
             redirect_uri="https://app.example.com/callback",
             wristband_application_vanity_domain="auth.example.com",
             token_expiration_buffer=0,  # Zero buffer
+            auto_configure_enabled=False,
         )
         wristband_auth = WristbandAuth(config_zero_buffer)
 
@@ -508,8 +512,8 @@ class TestWristbandAuthCallback:
 
         mock_user_info = UserInfo(sub="user_123", email="user@example.com", email_verified=True, username="testuser")
 
-        with patch.object(wristband_auth.wristband_api, "get_tokens", return_value=mock_token_response):
-            with patch.object(wristband_auth.wristband_api, "get_userinfo", return_value=mock_user_info):
+        with patch.object(wristband_auth._wristband_api, "get_tokens", return_value=mock_token_response):
+            with patch.object(wristband_auth._wristband_api, "get_userinfo", return_value=mock_user_info):
                 result = wristband_auth.callback(request)
 
         # Should not apply any buffer (3600 - 0 = 3600)
