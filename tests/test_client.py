@@ -6,7 +6,7 @@ import pytest
 
 from wristband.django_auth.client import WristbandApiClient
 from wristband.django_auth.exceptions import InvalidGrantError, WristbandError
-from wristband.django_auth.models import TokenResponse
+from wristband.django_auth.models import SdkConfiguration, TokenResponse
 
 
 class TestWristbandApiClientInit:
@@ -113,6 +113,248 @@ class TestWristbandApiClientInit:
         # Should not raise an exception and should encode properly
         assert "Authorization" in client.headers
         assert client.headers["Authorization"].startswith("Basic ")
+
+
+class TestWristbandApiClientGetSdkConfiguration:
+    """Test cases for get_sdk_configuration method."""
+
+    @patch("wristband.django_auth.client.httpx.Client")
+    def test_get_sdk_configuration_success(self, mock_client_class):
+        """Test successful SDK configuration retrieval."""
+        mock_response = Mock()
+        mock_response.json.return_value = {
+            "loginUrl": "https://auth.example.com/login",
+            "redirectUri": "https://app.example.com/callback",
+            "customApplicationLoginPageUrl": "https://app.example.com/login",
+            "isApplicationCustomDomainActive": True,
+            "loginUrlTenantDomainSuffix": "example.com",
+        }
+        mock_response.raise_for_status = Mock()
+
+        mock_client_instance = Mock()
+        mock_client_instance.get.return_value = mock_response
+        mock_client_class.return_value = mock_client_instance
+
+        # Add client_id to the client for SDK config endpoint
+        client = WristbandApiClient("auth.example.com", "test_client_id", "client_secret")
+        client.client_id = "test_client_id"  # Ensure this is set
+
+        result = client.get_sdk_configuration()
+
+        # Verify the request was made correctly
+        mock_client_instance.get.assert_called_once_with(
+            "https://auth.example.com/api/v1/clients/test_client_id/sdk-configuration",
+            headers={
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+            },
+        )
+        mock_response.raise_for_status.assert_called_once()
+
+        # Verify the result is an SdkConfiguration object
+        assert isinstance(result, SdkConfiguration)
+
+    @patch("wristband.django_auth.client.httpx.Client")
+    def test_get_sdk_configuration_http_error(self, mock_client_class):
+        """Test handling of HTTP errors in SDK configuration retrieval."""
+        mock_response = Mock()
+        mock_response.raise_for_status.side_effect = httpx.HTTPStatusError(
+            "404 Not Found", request=Mock(), response=mock_response
+        )
+
+        mock_client_instance = Mock()
+        mock_client_instance.get.return_value = mock_response
+        mock_client_class.return_value = mock_client_instance
+
+        client = WristbandApiClient("auth.example.com", "test_client_id", "client_secret")
+        client.client_id = "test_client_id"
+
+        with pytest.raises(WristbandError) as exc_info:
+            client.get_sdk_configuration()
+
+        assert exc_info.value.get_error() == "unexpected_error"
+        assert "404 Not Found" in exc_info.value.get_error_description()
+
+    @patch("wristband.django_auth.client.httpx.Client")
+    def test_get_sdk_configuration_json_error(self, mock_client_class):
+        """Test handling of JSON decode errors in SDK configuration."""
+        mock_response = Mock()
+        mock_response.json.side_effect = ValueError("Invalid JSON")
+        mock_response.raise_for_status = Mock()
+
+        mock_client_instance = Mock()
+        mock_client_instance.get.return_value = mock_response
+        mock_client_class.return_value = mock_client_instance
+
+        client = WristbandApiClient("auth.example.com", "test_client_id", "client_secret")
+        client.client_id = "test_client_id"
+
+        with pytest.raises(WristbandError) as exc_info:
+            client.get_sdk_configuration()
+
+        assert exc_info.value.get_error() == "unexpected_error"
+        assert "Invalid JSON" in exc_info.value.get_error_description()
+
+    @patch("wristband.django_auth.client.httpx.Client")
+    def test_get_sdk_configuration_connection_error(self, mock_client_class):
+        """Test handling of connection errors in SDK configuration retrieval."""
+        mock_client_instance = Mock()
+        mock_client_instance.get.side_effect = httpx.ConnectError("Connection failed")
+        mock_client_class.return_value = mock_client_instance
+
+        client = WristbandApiClient("auth.example.com", "test_client_id", "client_secret")
+        client.client_id = "test_client_id"
+
+        with pytest.raises(WristbandError) as exc_info:
+            client.get_sdk_configuration()
+
+        assert exc_info.value.get_error() == "unexpected_error"
+        assert "Connection failed" in exc_info.value.get_error_description()
+
+    @patch("wristband.django_auth.client.httpx.Client")
+    def test_get_sdk_configuration_timeout_error(self, mock_client_class):
+        """Test handling of timeout errors in SDK configuration retrieval."""
+        mock_client_instance = Mock()
+        mock_client_instance.get.side_effect = httpx.ReadTimeout("Request timeout")
+        mock_client_class.return_value = mock_client_instance
+
+        client = WristbandApiClient("auth.example.com", "test_client_id", "client_secret")
+        client.client_id = "test_client_id"
+
+        with pytest.raises(WristbandError) as exc_info:
+            client.get_sdk_configuration()
+
+        assert exc_info.value.get_error() == "unexpected_error"
+        assert "Request timeout" in exc_info.value.get_error_description()
+
+    @patch("wristband.django_auth.client.httpx.Client")
+    def test_get_sdk_configuration_malformed_response(self, mock_client_class):
+        """Test handling of malformed SDK configuration response."""
+        mock_response = Mock()
+        mock_response.json.return_value = {
+            "loginUrl": "https://auth.example.com/login",
+            # Missing required fields to trigger SdkConfiguration.from_api_response error
+        }
+        mock_response.raise_for_status = Mock()
+
+        mock_client_instance = Mock()
+        mock_client_instance.get.return_value = mock_response
+        mock_client_class.return_value = mock_client_instance
+
+        client = WristbandApiClient("auth.example.com", "test_client_id", "client_secret")
+        client.client_id = "test_client_id"
+
+        # Should raise an error when SdkConfiguration.from_api_response fails
+        with pytest.raises(WristbandError):
+            client.get_sdk_configuration()
+
+    @patch("wristband.django_auth.client.httpx.Client")
+    def test_get_sdk_configuration_empty_response(self, mock_client_class):
+        """Test handling of empty SDK configuration response."""
+        mock_response = Mock()
+        mock_response.json.return_value = {}
+        mock_response.raise_for_status = Mock()
+
+        mock_client_instance = Mock()
+        mock_client_instance.get.return_value = mock_response
+        mock_client_class.return_value = mock_client_instance
+
+        client = WristbandApiClient("auth.example.com", "test_client_id", "client_secret")
+        client.client_id = "test_client_id"
+
+        with pytest.raises(WristbandError):
+            client.get_sdk_configuration()
+
+    @patch("wristband.django_auth.client.httpx.Client")
+    def test_get_sdk_configuration_minimal_valid_response(self, mock_client_class):
+        """Test SDK configuration with minimal valid response."""
+        mock_response = Mock()
+        mock_response.json.return_value = {
+            "loginUrl": "https://auth.example.com/login",
+            "redirectUri": "https://app.example.com/callback",
+            "customApplicationLoginPageUrl": None,
+            "isApplicationCustomDomainActive": False,
+            "loginUrlTenantDomainSuffix": None,
+        }
+        mock_response.raise_for_status = Mock()
+
+        mock_client_instance = Mock()
+        mock_client_instance.get.return_value = mock_response
+        mock_client_class.return_value = mock_client_instance
+
+        client = WristbandApiClient("auth.example.com", "test_client_id", "client_secret")
+        client.client_id = "test_client_id"
+
+        result = client.get_sdk_configuration()
+
+        assert isinstance(result, SdkConfiguration)
+        # Test that minimal response is handled correctly
+
+    @patch("wristband.django_auth.client.httpx.Client")
+    def test_get_sdk_configuration_with_special_characters_in_client_id(self, mock_client_class):
+        """Test SDK configuration with special characters in client ID."""
+        mock_response = Mock()
+        mock_response.json.return_value = {
+            "loginUrl": "https://auth.example.com/login",
+            "redirectUri": "https://app.example.com/callback",
+            "customApplicationLoginPageUrl": "",
+            "isApplicationCustomDomainActive": True,
+            "loginUrlTenantDomainSuffix": "example.com",
+        }
+        mock_response.raise_for_status = Mock()
+
+        mock_client_instance = Mock()
+        mock_client_instance.get.return_value = mock_response
+        mock_client_class.return_value = mock_client_instance
+
+        special_client_id = "client@example.com"
+        client = WristbandApiClient("auth.example.com", special_client_id, "client_secret")
+        client.client_id = special_client_id
+
+        result = client.get_sdk_configuration()
+
+        # Verify the URL was constructed correctly with special characters
+        expected_url = f"https://auth.example.com/api/v1/clients/{special_client_id}/sdk-configuration"
+        mock_client_instance.get.assert_called_once_with(
+            expected_url,
+            headers={
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+            },
+        )
+
+        assert isinstance(result, SdkConfiguration)
+
+    @patch("wristband.django_auth.client.httpx.Client")
+    def test_get_sdk_configuration_headers_are_correct(self, mock_client_class):
+        """Test that SDK configuration uses correct headers (JSON, not form data)."""
+        mock_response = Mock()
+        mock_response.json.return_value = {
+            "loginUrl": "https://auth.example.com/login",
+            "redirectUri": "https://app.example.com/callback",
+            "customApplicationLoginPageUrl": None,
+            "isApplicationCustomDomainActive": False,
+            "loginUrlTenantDomainSuffix": None,
+        }
+        mock_response.raise_for_status = Mock()
+
+        mock_client_instance = Mock()
+        mock_client_instance.get.return_value = mock_response
+        mock_client_class.return_value = mock_client_instance
+
+        client = WristbandApiClient("auth.example.com", "test_client_id", "client_secret")
+        client.client_id = "test_client_id"
+
+        client.get_sdk_configuration()
+
+        # Verify that JSON headers are used, not the default form headers
+        call_args = mock_client_instance.get.call_args
+        headers = call_args[1]["headers"]
+
+        assert headers["Content-Type"] == "application/json"
+        assert headers["Accept"] == "application/json"
+        # Should NOT use the default form headers from the client
+        assert headers != client.headers
 
 
 class TestWristbandApiClientGetTokens:

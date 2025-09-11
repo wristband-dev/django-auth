@@ -104,16 +104,10 @@ First, add your Wristband configuration to your Django settings file. All necess
 ```python
 # your_project/settings.py
 
-# You can generate a login state secret by running:
-# > python3 -c \"import secrets; print(secrets.token_urlsafe(32))\"
 WRISTBAND_AUTH = {
     "client_id": "<your_client_id>",
     "client_secret": "<your_client_secret>",
-    "login_state_secret": "<your_login_state_secret>",
-    "login_url": 'https://yourapp.ai/auth/login',
-    "redirect_uri": 'https://yourapp.ai/auth/callback',
     "wristband_application_vanity_domain": "<your_wristband_application_vanity_domain>",
-    "dangerously_disable_secure_cookies": False,  # Set to True for local development
 }
 ```
 
@@ -138,10 +132,6 @@ def _create_wristband_auth() -> WristbandAuth:
         client_id=wristband_settings['client_id'],
         client_secret=wristband_settings['client_secret'],
         wristband_application_vanity_domain=wristband_settings['wristband_application_vanity_domain'],
-        login_url=wristband_settings['login_url'],
-        redirect_uri=wristband_settings['redirect_uri'],
-        login_state_secret=wristband_settings['login_state_secret'],
-        dangerously_disable_secure_cookies=wristband_settings.get('dangerously_disable_secure_cookies'),
     )
     return WristbandAuth(auth_config)
 
@@ -204,7 +194,7 @@ Make sure to configure Django sessions to work optimally with Wristband authenti
 # Session configuration
 SESSION_SAVE_EVERY_REQUEST = True  # Keep a rolling session expiration time as long as user is active
 SESSION_COOKIE_AGE = 3600  # 1 hour of inactivity, adjust as needed
-SESSION_COOKIE_SECURE = False  # IMPORTANT: Set to True in Production!!
+SESSION_COOKIE_SECURE = True
 ```
 
 <br>
@@ -727,20 +717,155 @@ The `WristbandAuth()` constructor is used to instantiate the Wristband SDK. It t
 def __init__(self, auth_config: AuthConfig) -> None:
 ```
 
-| AuthConfig Field | Type | Required | Description |
-| ---------------- | ---- | -------- | ----------- |
-| client_id | str | Yes | The ID of the Wristband client. |
-| client_secret | str | Yes | The client's secret. |
-| custom_application_login_page_url | Optional[str] | No | Custom Application-Level Login Page URL (i.e. Tenant Discovery Page URL). This value only needs to be provided if you are self-hosting the application login page. By default, the SDK will use your Wristband-hosted Application-Level Login page URL. If this value is provided, the SDK will redirect to this URL in certain cases where it cannot resolve a proper Tenant-Level Login URL. |
-| dangerously_disable_secure_cookies | bool | No | USE WITH CAUTION: If set to `True`, the "Secure" attribute will not be included in any cookie settings. This should only be done when testing in local development environments that don't have HTTPS enabed.  If not provided, this value defaults to `False`. |
-| is_application_custom_domain_active | bool | No | Indicates whether your Wristband application is configured with an application-level custom domain that is active. This tells the SDK which URL format to use when constructing the Wristband Authorize Endpoint URL. This has no effect on any tenant custom domains passed to your Login Endpoint either via the `tenant_custom_domain` query parameter or via the `default_tenant_custom_domain` config.  Defaults to `False`. |
-| login_state_secret | str | Yes | A 32 byte (or longer) secret used for encryption and decryption of login state cookies. You can run `python3 -c \"import secrets; print(secrets.token_urlsafe(32))\"` to create a secret from your CLI. |
-| login_url | str | Yes | The URL of your application's login endpoint.  This is the endpoint within your application that redirects to Wristband to initialize the login flow. If you intend to use tenant subdomains in your Login Endpoint URL, then this value must contain the `{tenant_domain}` token. For example: `https://{tenant_domain}.yourapp.com/auth/login`. |
-| parse_tenant_from_root_domain | str | Only if using tenant subdomains in your application | The root domain for your application. This value only needs to be specified if you intend to use tenant subdomains in your Login and Callback Endpoint URLs.  The root domain should be set to the portion of the domain that comes after the tenant subdomain.  For example, if your application uses tenant subdomains such as `tenantA.yourapp.com` and `tenantB.yourapp.com`, then the root domain should be set to `yourapp.com`. This has no effect on any tenant custom domains passed to your Login Endpoint either via the `tenant_custom_domain` query parameter or via the `default_tenant_custom_domain` config. When this configuration is enabled, the SDK extracts the tenant subdomain from the host and uses it to construct the Wristband Authorize URL. |
-| redirect_uri | str | Yes | The URI that Wristband will redirect to after authenticating a user.  This should point to your application's callback endpoint. If you intend to use tenant subdomains in your Callback Endpoint URL, then this value must contain the `{tenant_domain}` token. For example: `https://{tenant_domain}.yourapp.com/auth/callback`. |
-| scopes | List[str] | No | The scopes required for authentication. Refer to the docs for [currently supported scopes](https://docs.wristband.dev/docs/oauth2-and-openid-connect-oidc#supported-openid-scopes). The default value is `["openid", "offline_access", "email"]`. |
-| wristband_application_vanity_domain | str | Yes | The vanity domain of the Wristband application. |
-| token_expiration_buffer | int | No | Buffer time (in seconds) to subtract from the access token’s expiration time. This causes the token to be treated as expired before its actual expiration, helping to avoid token expiration during API calls. Defaults to 60 seconds. |
+| AuthConfig Field | Type | Required | Auto-Configurable | Description |
+| ---------------- | ---- | -------- | ----------------- | ----------- |
+| auto_configure_enabled | bool | No | _N/A_ | Flag that tells the SDK to automatically set some of the SDK configuration values by calling to Wristband's SDK Auto-Configuration Endpoint. Any manually provided configurations will take precedence over the configs returned from the endpoint. Auto-configure is enabled by default. When disabled, if manual configurations are not provided, then an error will be thrown. |
+| client_id | str | Yes | No | The ID of the Wristband client. |
+| client_secret | str | Yes | No | The client's secret. |
+| custom_application_login_page_url | Optional[str] | No | Yes | Custom Application-Level Login Page URL (i.e. Tenant Discovery Page URL). This value only needs to be provided if you are self-hosting the application login page. By default, the SDK will use your Wristband-hosted Application-Level Login page URL. If this value is provided, the SDK will redirect to this URL in certain cases where it cannot resolve a proper Tenant-Level Login URL. |
+| dangerously_disable_secure_cookies | bool | No | No | USE WITH CAUTION: If set to `True`, the "Secure" attribute will not be included in any cookie settings. This should only be done when testing in local development environments that don't have HTTPS enabed.  If not provided, this value defaults to `False`. |
+| is_application_custom_domain_active | Optional[bool] | No | Yes | Indicates whether your Wristband application is configured with an application-level custom domain that is active. This tells the SDK which URL format to use when constructing the Wristband Authorize Endpoint URL. This has no effect on any tenant custom domains passed to your Login Endpoint either via the `tenant_custom_domain` query parameter or via the `default_tenant_custom_domain` config.  Defaults to `False`. |
+| login_state_secret | Optional[str] | No | No | A 32 character (or longer) secret used for encryption and decryption of login state cookies. If not provided, it will default to using the client secret. For enhanced security, it is recommended to provide a value that is unique from the client secret. You can run `python3 -c \"import secrets; print(secrets.token_urlsafe(32))\"` to create a secret from your CLI. |
+| login_url | Optional[str] | Only when `auto_configure_enabled` is set to `False` | Yes | The URL of your application's login endpoint.  This is the endpoint within your application that redirects to Wristband to initialize the login flow. If you intend to use tenant subdomains in your Login Endpoint URL, then this value must contain the `{tenant_domain}` token. For example: `https://{tenant_domain}.yourapp.com/auth/login`. |
+| parse_tenant_from_root_domain | Optional[str] | Only if using tenant subdomains in your application | Yes | The root domain for your application. This value only needs to be specified if you intend to use tenant subdomains in your Login and Callback Endpoint URLs.  The root domain should be set to the portion of the domain that comes after the tenant subdomain.  For example, if your application uses tenant subdomains such as `tenantA.yourapp.com` and `tenantB.yourapp.com`, then the root domain should be set to `yourapp.com`. This has no effect on any tenant custom domains passed to your Login Endpoint either via the `tenant_custom_domain` query parameter or via the `default_tenant_custom_domain` config. When this configuration is enabled, the SDK extracts the tenant subdomain from the host and uses it to construct the Wristband Authorize URL. |
+| redirect_uri | Optional[str] | Only when `auto_configure_enabled` is set to `False` | Yes | The URI that Wristband will redirect to after authenticating a user.  This should point to your application's callback endpoint. If you intend to use tenant subdomains in your Callback Endpoint URL, then this value must contain the `{tenant_domain}` token. For example: `https://{tenant_domain}.yourapp.com/auth/callback`. |
+| scopes | List[str] | No | No | The scopes required for authentication. Specified scopes can alter which data is returned from the `callback()` method's `callback_data` return type.  Refer to the [Wristband Authorize API](https://docs.wristband.dev/reference/authorizev1) documentation for currently supported scopes. The default value is `["openid", "offline_access", "email"]`. |
+| token_expiration_buffer | int | No | No | Buffer time (in seconds) to subtract from the access token’s expiration time. This causes the token to be treated as expired before its actual expiration, helping to avoid token expiration during API calls. Defaults to 60 seconds. |
+| wristband_application_vanity_domain | str | Yes | No | The vanity domain of the Wristband application. |
+
+<br>
+
+### `WristbandAuth()`
+
+```ts
+wristband_auth: WristbandAuth = WristbandAuth(auth_config: AuthConfig)
+```
+
+This constructor creates an instance of `WristbandAuth` using lazy auto-configuration. Auto-configuration is enabled by default and will fetch any missing configuration values from the Wristband SDK Configuration Endpoint when any auth function is first called (i.e. `login`, `callback`, etc.). Set `auto_configure_enabled` to `False` disable to prevent the SDK from making an API request to the Wristband SDK Configuration Endpoint. In the event auto-configuration is disabled, you must manually configure all required values. Manual configuration values take precedence over auto-configured values.
+
+**Minimal config with auto-configure (default behavior)**
+```python
+# your_project/settings.py
+
+WRISTBAND_AUTH = {
+    "client_id": "<your_client_id>",
+    "client_secret": "<your_client_secret>",
+    "wristband_application_vanity_domain": "<your_wristband_application_vanity_domain>",
+}
+
+# your_app/wristband.py
+from django.conf import settings
+from wristband.django_auth import AuthConfig, WristbandAuth
+
+__all__ = ['wristband_auth']
+
+# Configure Wristband authentication
+def _create_wristband_auth() -> WristbandAuth:
+    wristband_settings = settings.WRISTBAND_AUTH
+    
+    auth_config = AuthConfig(
+        client_id=wristband_settings['client_id'],
+        client_secret=wristband_settings['client_secret'],
+        wristband_application_vanity_domain=wristband_settings['wristband_application_vanity_domain'],
+    )
+```
+
+**Manual override with partial auto-configure for some fields**
+```python
+# your_project/settings.py
+
+WRISTBAND_AUTH = {
+    "client_id": "<your_client_id>",
+    "client_secret": "<your_client_secret>",
+    "wristband_application_vanity_domain": "<your_wristband_application_vanity_domain>",
+    "login_url": "https://yourapp.io/auth/login",  # Manually override "login_url"
+    # "redirect_uri" will be auto-configured
+}
+
+# your_app/wristband.py
+from django.conf import settings
+from wristband.django_auth import AuthConfig, WristbandAuth
+
+__all__ = ['wristband_auth']
+
+# Configure Wristband authentication
+def _create_wristband_auth() -> WristbandAuth:
+    wristband_settings = settings.WRISTBAND_AUTH
+    
+    auth_config = AuthConfig(
+        client_id=wristband_settings['client_id'],
+        client_secret=wristband_settings['client_secret'],
+        wristband_application_vanity_domain=wristband_settings['wristband_application_vanity_domain'],
+        login_url=wristband_settings['login_url'],
+    )
+```
+
+**Auto-configure disabled**
+```python
+# your_project/settings.py
+
+WRISTBAND_AUTH = {
+    "auto_configure_enabled": False,
+    "client_id": "<your_client_id>",
+    "client_secret": "<your_client_secret>",
+    "wristband_application_vanity_domain": "auth.custom.com",
+    # Must manually configure non-auto-configurable fields
+    "is_application_custom_domain_active": True,
+    "login_url": "https://{tenant_domain}.custom.com/auth/login",
+    "redirect_uri": "https://{tenant_domain}.custom.com/auth/callback",
+    "parse_tenant_from_root_domain": "custom.com",
+}
+
+# your_app/wristband.py
+from django.conf import settings
+from wristband.django_auth import AuthConfig, WristbandAuth
+
+__all__ = ['wristband_auth']
+
+# Configure Wristband authentication
+def _create_wristband_auth() -> WristbandAuth:
+    wristband_settings = settings.WRISTBAND_AUTH
+    
+    auth_config = AuthConfig(
+        client_id=wristband_settings['client_id'],
+        client_secret=wristband_settings['client_secret'],
+        wristband_application_vanity_domain=wristband_settings['wristband_application_vanity_domain'],
+        is_application_custom_domain_active=wristband_settings['is_application_custom_domain_active'],
+        login_url=wristband_settings['login_url'],
+        redirect_uri=wristband_settings['redirect_uri'],
+        parse_tenant_from_root_domain=wristband_settings['parse_tenant_from_root_domain'],
+    )
+```
+
+<br>
+
+### `WristbandAuth.discover()`
+
+This method performs eager auto-configuration on an existing `WristbandAuth` instance. Unlike the default lazy auto-configuration behavior, this method immediately fetches and resolves all auto-configuration values from the Wristband SDK Configuration Endpoint during the call. This is useful when you want to fail fast if auto-configuration is unavailable, or when you need configuration values resolved before making any auth method calls. Manual configuration values take precedence over auto-configured values.
+
+> [!WARNING]
+> NOTE: This method can only be called when `auto_configure_enabled` is `True`. If auto-configuration is disabled, a `WristbandError` will be raised.
+
+**Eager auto-configure with error handling**
+```python
+try:
+    wristband_auth = WristbandAuth(AuthConfig(
+        client_id="your-client-id",
+        client_secret="your-client-secret",
+        wristband_application_vanity_domain="auth.yourapp.io"
+    ))
+    
+    # Eager-fetch the SDK configuration
+    wristband_auth.discover()
+    
+    #
+    # ...Configuration is now resolved and validated...
+    #
+except WristbandError as error:
+    print(f'Auto-configuration failed: {error.error_description}')
+```
+
+<br>
 
 ## API
 
@@ -759,6 +884,7 @@ The `login()` method can also take optional configuration if your application ne
 | custom_state | Optional[dict[str, Any]] | No | Additional state to be saved in the Login State Cookie. Upon successful completion of an auth request/login attempt, your Callback Endpoint will return this custom state (unmodified) as part of the return type. |
 | default_tenant_domain_name | str | No | An optional default tenant domain name to use for the login request in the event the tenant domain cannot be found in either the subdomain or query parameters (depending on your subdomain configuration). |
 | default_tenant_custom_domain | str | No | An optional default tenant custom domain to use for the login request in the event the tenant custom domain cannot be found in the query parameters. |
+| return_url | string | No | The URL to return to after authentication is completed. If a value is provided, then it takes precedence over the `return_url` request query parameter. |
 
 #### Which Domains Are Used in the Authorize URL?
 
@@ -877,13 +1003,24 @@ If Wristband passes this parameter, it will be appended as part of the redirect 
 
 #### Return URLs
 
-It is possible that users will try to access a location within your application that is not some default landing page. In those cases, they would expect to immediately land back at that desired location after logging in.  This is a better experience for the user, especially in cases where they have application URLs bookmarked for convenience.  Given that your frontend will redirect users to your Django Login Endpoint, you can pass a `return_url` query parameter when redirecting to your Login Endpoint, and that URL will be available to you upon completion of the Callback Endpoint.
+It is possible that users will try to access a location within your application that is not some default landing page. In those cases, they would expect to immediately land back at that desired location after logging in.  This is a better experience for the user, especially in cases where they have application URLs bookmarked for convenience.
 
-```sh
-GET https://customer01.yourapp.ai/auth/login?return_url=https://customer01.yourapp.ai/settings/profile
+Given that your frontend will redirect users to your Login Endpoint, you can either include it in your Login Config:
+
+```python
+response = wristband_auth.login(
+    request=request, 
+    config=LoginConfig(return_url="test")
+)
 ```
 
-The return URL is stored in the Login State Cookie, and you can choose to send users to that return URL (if necessary) after the SDK's `callback()` method is done executing.
+...or you can pass a `return_url` query parameter when redirecting to your Login Endpoint:
+
+```sh
+GET https://customer01.yourapp.io/auth/login?return_url=https://customer01.yourapp.io/settings/profile
+```
+
+The return URL is stored in the Login State Cookie, and it is available to you in your Callback Endpoint after the SDK's `callback()` method is done executing. You can choose to send users to that return URL (if necessary). The Login Config takes precedence over the query parameter in the event a value is provided for both.
 
 <br/>
 
@@ -1004,6 +1141,7 @@ If your application created a session, it should destroy it before invoking the 
 | ------------------ | ---- | -------- | ----------- |
 | redirect_url | Optional[str] | No | Optional URL that Wristband will redirect to after the logout operation has completed. This will also take precedence over the `custom_application_login_page_url` (if specified) in the SDK AuthConfig if the tenant domain cannot be determined when attempting to redirect to the Wristband Logout Endpoint. |
 | refresh_token | Optional[str] | No | The refresh token to revoke. |
+| state | Optional[str] | No | Optional value that will be appended as a query parameter to the resolved logout URL, if provided. Maximum length of 512 characters. |
 | tenant_custom_domain | Optional[str] | No | The tenant custom domain for the tenant that the user belongs to (if applicable). |
 | tenant_domain_name | Optional[str] | No | The domain name of the tenant the user belongs to. |
 
@@ -1074,6 +1212,35 @@ response: HttpResponse = wristband_auth.logout(
 ```
 
 If your application supports a mixture of tenants that use tenant subdomains and tenant custom domains, then you should consider passing both the tenant domain names and tenant custom domains (either via LogoutConfig or by query parameters) to ensure all use cases are handled by the SDK.
+
+#### Preserving State After Logout
+
+The `state` field in the `LogoutConfig` allows you to preserve application state through the logout flow.
+
+```python
+response: HttpResponse = wristband_auth.logout(
+    request=request,
+    config=LogoutConfig(
+        refresh_token="98yht308hf902hc90wh09",
+        tenant_domain_name="customer01",
+        state="user_initiated_logout"
+    )
+)
+```
+
+The state value gets appended as a query parameter to the Wristband Logout Endpoint URL:
+
+```sh
+https://customer01.auth.yourapp.io/api/v1/logout?client_id=123&state=user_initiated_logout
+```
+
+After logout completes, Wristband will redirect to your configured redirect URL (either your Login Endpoint by default, or a custom logout redirect URL if configured) with the `state` parameter included:
+
+```sh
+https://yourapp.io/auth/login?tenant_domain=customer01&state=user_initiated_logout
+```
+
+This is useful for tracking logout context, displaying post-logout messages, or handling different logout scenarios. The state value is limited to 512 characters and will be URL-encoded automatically.
 
 #### Custom Logout Redirect URL
 

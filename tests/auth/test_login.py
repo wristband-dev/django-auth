@@ -41,6 +41,7 @@ class TestWristbandAuthLogin:
             redirect_uri="https://app.example.com/callback",
             wristband_application_vanity_domain="auth.example.com",
             scopes=["openid", "offline_access", "email"],
+            auto_configure_enabled=False,
         )
         self.wristband_auth = WristbandAuth(self.auth_config)
         self.factory = RequestFactory()
@@ -70,6 +71,7 @@ class TestWristbandAuthLogin:
             redirect_uri="https://app.example.com/callback",
             wristband_application_vanity_domain="auth.example.com",
             custom_application_login_page_url=custom_url,
+            auto_configure_enabled=False,
         )
         wristband_auth = WristbandAuth(config_with_custom)
 
@@ -161,6 +163,7 @@ class TestWristbandAuthLogin:
             wristband_application_vanity_domain="auth.example.com",
             parse_tenant_from_root_domain="custom.com",
             scopes=["openid", "email"],
+            auto_configure_enabled=False,
         )
         temp_wristband_auth = WristbandAuth(temp_config)
 
@@ -243,6 +246,68 @@ class TestWristbandAuthLogin:
         # Validate login state cookie is set
         assert_single_login_cookie_valid(response)
 
+    def test_login_with_return_url_from_login_config_takes_precedence(self) -> None:
+        """Test that LoginConfig return_url takes precedence over query parameter."""
+        request = self.factory.get("/login?tenant_domain=test-tenant&return_url=https://query.example.com/dashboard")
+        login_config = LoginConfig(return_url="https://config.example.com/preferred")
+
+        response = self.wristband_auth.login(request, login_config)
+
+        # Validate redirect response
+        expected_url = "https://test-tenant-auth.example.com/api/v1/oauth2/authorize"
+        _, query_params = assert_redirect_no_cache(response, expected_url)
+
+        # Validate query params
+        assert_authorize_query_params(query_params, "test_client_id", "https://app.example.com/callback")
+
+        # Validate login state cookie contains LoginConfig return_url, not query param
+        _, cookie_value = assert_single_login_cookie_valid(response)
+        login_state = decrypt_login_state(cookie_value)
+        assert login_state.return_url == "https://config.example.com/preferred"
+
+    def test_login_with_return_url_from_query_param_when_no_config(self) -> None:
+        """Test that query parameter return_url is used when LoginConfig return_url is None."""
+        request = self.factory.get("/login?tenant_domain=test-tenant&return_url=https://query.example.com/dashboard")
+        login_config = LoginConfig()  # return_url is None by default
+
+        response = self.wristband_auth.login(request, login_config)
+
+        # Validate redirect response
+        expected_url = "https://test-tenant-auth.example.com/api/v1/oauth2/authorize"
+        _, query_params = assert_redirect_no_cache(response, expected_url)
+
+        # Validate query params
+        assert_authorize_query_params(query_params, "test_client_id", "https://app.example.com/callback")
+
+        # Validate login state cookie contains query param return_url
+        _, cookie_value = assert_single_login_cookie_valid(response)
+        login_state = decrypt_login_state(cookie_value)
+        assert login_state.return_url == "https://query.example.com/dashboard"
+
+    def test_login_with_empty_string_return_url_in_config_uses_query_param(self) -> None:
+        """Test that empty string return_url in LoginConfig falls back to query param (falsy behavior)."""
+        request = self.factory.get("/login?tenant_domain=test-tenant&return_url=https://query.example.com/dashboard")
+        login_config = LoginConfig(return_url="")  # Empty string is falsy
+
+        response = self.wristband_auth.login(request, login_config)
+
+        # Validate login state cookie - empty string is falsy, so query param is used
+        _, cookie_value = assert_single_login_cookie_valid(response)
+        login_state = decrypt_login_state(cookie_value)
+        assert login_state.return_url == "https://query.example.com/dashboard"
+
+    def test_login_with_no_return_url_anywhere(self) -> None:
+        """Test that no return_url is set when neither LoginConfig nor query param provide it."""
+        request = self.factory.get("/login?tenant_domain=test-tenant")
+        login_config = LoginConfig()  # return_url is None
+
+        response = self.wristband_auth.login(request, login_config)
+
+        # Validate login state cookie has no return_url
+        _, cookie_value = assert_single_login_cookie_valid(response)
+        login_state = decrypt_login_state(cookie_value)
+        assert login_state.return_url is None
+
 
 class TestWristbandAuthCreateLoginState:
     """Test cases for _create_login_state method."""
@@ -256,6 +321,7 @@ class TestWristbandAuthCreateLoginState:
             login_url="https://auth.example.com/login",
             redirect_uri="https://app.example.com/callback",
             wristband_application_vanity_domain="auth.example.com",
+            auto_configure_enabled=False,
         )
         self.wristband_auth = WristbandAuth(self.auth_config)
         self.factory = RequestFactory()
@@ -264,7 +330,12 @@ class TestWristbandAuthCreateLoginState:
         """Test _create_login_state captures return_url from request."""
         request = self.factory.get("/login?return_url=https://app.example.com/dashboard")
 
-        result = self.wristband_auth._create_login_state(request, None)
+        result = self.wristband_auth._create_login_state(
+            request,
+            self.auth_config.redirect_uri or "",
+            None,  # custom_state
+            None,  # return_url (will use query param)
+        )
 
         assert result.return_url == "https://app.example.com/dashboard"
         assert result.redirect_uri == self.auth_config.redirect_uri
@@ -276,13 +347,13 @@ class TestWristbandAuthCreateLoginState:
         request = self.factory.get("/login?return_url=url1&return_url=url2")
 
         with pytest.raises(TypeError, match="More than one \\[return_url\\] query parameter was encountered"):
-            self.wristband_auth._create_login_state(request, None)
+            self.wristband_auth._create_login_state(request, self.auth_config.redirect_uri or "", None, None)
 
     def test_create_login_state_no_return_url(self) -> None:
         """Test _create_login_state handles missing return_url."""
         request = self.factory.get("/login")
 
-        result = self.wristband_auth._create_login_state(request, None)
+        result = self.wristband_auth._create_login_state(request, self.auth_config.redirect_uri or "", None, None)
 
         assert result.return_url is None
         assert result.redirect_uri == self.auth_config.redirect_uri
@@ -292,7 +363,9 @@ class TestWristbandAuthCreateLoginState:
         request = self.factory.get("/login")
         custom_state = {"app": "test", "user": "123"}
 
-        result = self.wristband_auth._create_login_state(request, custom_state)
+        result = self.wristband_auth._create_login_state(
+            request, self.auth_config.redirect_uri or "", custom_state, None
+        )
 
         assert result.custom_state == custom_state
 
@@ -309,6 +382,7 @@ class TestWristbandAuthGenerateRandomString:
             login_url="https://auth.example.com/login",
             redirect_uri="https://app.example.com/callback",
             wristband_application_vanity_domain="auth.example.com",
+            auto_configure_enabled=False,
         )
         self.wristband_auth = WristbandAuth(self.auth_config)
 
@@ -346,6 +420,7 @@ class TestWristbandAuthEncryptDecryptLoginState:
             login_url="https://auth.example.com/login",
             redirect_uri="https://app.example.com/callback",
             wristband_application_vanity_domain="auth.example.com",
+            auto_configure_enabled=False,
         )
         self.wristband_auth = WristbandAuth(self.auth_config)
 
@@ -368,6 +443,22 @@ class TestWristbandAuthEncryptDecryptLoginState:
         assert decrypted.return_url == login_state.return_url
         assert decrypted.custom_state == login_state.custom_state
 
+    def test_encrypt_login_state_exceeds_4kb_raises_error(self) -> None:
+        """Test that encrypting login state raises error when resulting cookie exceeds 4kB."""
+        # Create a login state with very large custom_state to exceed 4kB after encryption
+        large_custom_state = {f"key_{i}": "x" * 200 for i in range(100)}  # Create large nested data
+
+        login_state = LoginState(
+            state="test_state",
+            code_verifier="test_verifier",
+            redirect_uri="https://app.example.com/callback",
+            return_url="https://app.example.com/dashboard",
+            custom_state=large_custom_state,
+        )
+
+        with pytest.raises(TypeError, match="Login state cookie exceeds 4kB in size"):
+            self.wristband_auth._encrypt_login_state(login_state)
+
 
 class TestWristbandAuthGenerateCodeChallenge:
     """Test cases for _generate_code_challenge method."""
@@ -381,6 +472,7 @@ class TestWristbandAuthGenerateCodeChallenge:
             login_url="https://auth.example.com/login",
             redirect_uri="https://app.example.com/callback",
             wristband_application_vanity_domain="auth.example.com",
+            auto_configure_enabled=False,
         )
         self.wristband_auth = WristbandAuth(self.auth_config)
 
@@ -416,6 +508,7 @@ class TestWristbandAuthGetOAuthAuthorizeUrl:
             redirect_uri="https://app.example.com/callback",
             wristband_application_vanity_domain="auth.example.com",
             scopes=["openid", "email", "profile"],
+            auto_configure_enabled=False,
         )
         self.wristband_auth = WristbandAuth(self.auth_config)
         self.factory = RequestFactory()
@@ -423,19 +516,19 @@ class TestWristbandAuthGetOAuthAuthorizeUrl:
     def test_get_oauth_authorize_url_with_tenant_custom_domain(self) -> None:
         """Test _get_oauth_authorize_url uses tenant custom domain when available."""
         request = self.factory.get("/login")
-        login_state = LoginState(
-            state="test_state",
-            code_verifier="test_verifier",
-            redirect_uri=self.auth_config.redirect_uri,
-            return_url=None,
-            custom_state=None,
-        )
+
         oauth_config = OAuthAuthorizeUrlConfig(
-            login_state=login_state,
+            client_id="test_client_id",
+            redirect_uri=self.auth_config.redirect_uri or "",
+            code_verifier="test_verifier",
+            scopes=["openid", "email", "profile"],
+            state="test_state",
             tenant_custom_domain="custom.tenant.com",
             tenant_domain_name="tenant1",
             default_tenant_custom_domain=None,
             default_tenant_domain_name=None,
+            is_application_custom_domain_active=False,
+            wristband_application_vanity_domain="auth.example.com",
         )
 
         result = self.wristband_auth._get_oauth_authorize_url(request, oauth_config)
@@ -448,19 +541,19 @@ class TestWristbandAuthGetOAuthAuthorizeUrl:
     def test_get_oauth_authorize_url_with_tenant_domain_name(self) -> None:
         """Test _get_oauth_authorize_url uses tenant domain name when custom domain not available."""
         request = self.factory.get("/login")
-        login_state = LoginState(
-            state="test_state",
-            code_verifier="test_verifier",
-            redirect_uri=self.auth_config.redirect_uri,
-            return_url=None,
-            custom_state=None,
-        )
+
         oauth_config = OAuthAuthorizeUrlConfig(
-            login_state=login_state,
+            client_id="test_client_id",
+            redirect_uri=self.auth_config.redirect_uri or "",
+            code_verifier="test_verifier",
+            scopes=["openid", "email", "profile"],
+            state="test_state",
             tenant_custom_domain=None,
             tenant_domain_name="tenant1",
             default_tenant_custom_domain=None,
             default_tenant_domain_name=None,
+            is_application_custom_domain_active=False,
+            wristband_application_vanity_domain="auth.example.com",
         )
 
         result = self.wristband_auth._get_oauth_authorize_url(request, oauth_config)
@@ -471,19 +564,19 @@ class TestWristbandAuthGetOAuthAuthorizeUrl:
     def test_get_oauth_authorize_url_with_login_hint(self) -> None:
         """Test _get_oauth_authorize_url includes login_hint when present."""
         request = self.factory.get("/login?login_hint=user@example.com")
-        login_state = LoginState(
-            state="test_state",
-            code_verifier="test_verifier",
-            redirect_uri=self.auth_config.redirect_uri,
-            return_url=None,
-            custom_state=None,
-        )
+
         oauth_config = OAuthAuthorizeUrlConfig(
-            login_state=login_state,
+            client_id="test_client_id",
+            redirect_uri=self.auth_config.redirect_uri or "",
+            code_verifier="test_verifier",
+            scopes=["openid", "email", "profile"],
+            state="test_state",
             tenant_custom_domain="custom.tenant.com",
             tenant_domain_name=None,
             default_tenant_custom_domain=None,
             default_tenant_domain_name=None,
+            is_application_custom_domain_active=False,
+            wristband_application_vanity_domain="auth.example.com",
         )
 
         result = self.wristband_auth._get_oauth_authorize_url(request, oauth_config)
@@ -493,19 +586,19 @@ class TestWristbandAuthGetOAuthAuthorizeUrl:
     def test_get_oauth_authorize_url_multiple_login_hints_raises_error(self) -> None:
         """Test _get_oauth_authorize_url raises error when multiple login_hint params exist."""
         request = self.factory.get("/login?login_hint=user1@example.com&login_hint=user2@example.com")
-        login_state = LoginState(
-            state="test_state",
-            code_verifier="test_verifier",
-            redirect_uri=self.auth_config.redirect_uri,
-            return_url=None,
-            custom_state=None,
-        )
+
         oauth_config = OAuthAuthorizeUrlConfig(
-            login_state=login_state,
+            client_id="test_client_id",
+            redirect_uri=self.auth_config.redirect_uri or "",
+            code_verifier="test_verifier",
+            scopes=["openid", "email", "profile"],
+            state="test_state",
             tenant_custom_domain="custom.tenant.com",
             tenant_domain_name=None,
             default_tenant_custom_domain=None,
             default_tenant_domain_name=None,
+            is_application_custom_domain_active=False,
+            wristband_application_vanity_domain="auth.example.com",
         )
 
         with pytest.raises(TypeError, match="More than one \\[login_hint\\] query parameter was encountered"):
@@ -524,6 +617,7 @@ class TestWristbandAuthCookieManagement:
             login_url="https://auth.example.com/login",
             redirect_uri="https://app.example.com/callback",
             wristband_application_vanity_domain="auth.example.com",
+            auto_configure_enabled=False,
         )
         self.wristband_auth = WristbandAuth(self.auth_config)
         self.factory = RequestFactory()
@@ -578,6 +672,7 @@ class TestWristbandAuthBuildTenantLoginUrl:
             login_url="https://auth.example.com/login",
             redirect_uri="https://app.example.com/callback",
             wristband_application_vanity_domain="auth.example.com",
+            auto_configure_enabled=False,
         )
         self.wristband_auth = WristbandAuth(self.auth_config)
 
@@ -591,22 +686,38 @@ class TestWristbandAuthBuildTenantLoginUrl:
             redirect_uri="https://{tenant_domain}.app.example.com/callback",
             wristband_application_vanity_domain="auth.example.com",
             parse_tenant_from_root_domain="auth.example.com",
+            auto_configure_enabled=False,
         )
         wristband_auth = WristbandAuth(config_with_subdomain)
 
-        result = wristband_auth._build_tenant_login_url("tenant1")
+        result = wristband_auth._build_tenant_login_url(
+            login_url="https://{tenant_domain}.auth.example.com/login",
+            tenant_domain="tenant1",
+            tenant_custom_domain=None,
+            parse_tenant_from_root_domain="auth.example.com",
+        )
 
         assert result == "https://tenant1.auth.example.com/login"
 
     def test_build_tenant_login_url_without_subdomain_parsing(self) -> None:
         """Test _build_tenant_login_url without subdomain parsing."""
-        result = self.wristband_auth._build_tenant_login_url("tenant1")
+        result = self.wristband_auth._build_tenant_login_url(
+            login_url="https://auth.example.com/login",
+            tenant_domain="tenant1",
+            tenant_custom_domain=None,
+            parse_tenant_from_root_domain=None,
+        )
 
         assert result == "https://auth.example.com/login?tenant_domain=tenant1"
 
     def test_build_tenant_login_url_with_tenant_custom_domain(self) -> None:
         """Test _build_tenant_login_url adds tenant_custom_domain parameter."""
-        result = self.wristband_auth._build_tenant_login_url("tenant1", "custom.tenant.com")
+        result = self.wristband_auth._build_tenant_login_url(
+            login_url="https://auth.example.com/login",
+            tenant_domain="tenant1",
+            tenant_custom_domain="custom.tenant.com",
+            parse_tenant_from_root_domain=None,
+        )
 
         expected = "https://auth.example.com/login?tenant_domain=tenant1&tenant_custom_domain=custom.tenant.com"
         assert result == expected
@@ -624,6 +735,7 @@ class TestWristbandAuthResolveTenantMethods:
             login_url="https://auth.example.com/login",
             redirect_uri="https://app.example.com/callback",
             wristband_application_vanity_domain="auth.example.com",
+            auto_configure_enabled=False,
         )
         self.wristband_auth = WristbandAuth(self.auth_config)
         self.factory = RequestFactory()
@@ -638,12 +750,13 @@ class TestWristbandAuthResolveTenantMethods:
             redirect_uri="https://{tenant_domain}.app.example.com/callback",
             wristband_application_vanity_domain="auth.example.com",
             parse_tenant_from_root_domain="auth.example.com",
+            auto_configure_enabled=False,
         )
         wristband_auth = WristbandAuth(config_with_subdomain)
 
         request = self.factory.get("/login")
         with patch.object(request, "get_host", return_value="tenant1.auth.example.com"):
-            result = wristband_auth._resolve_tenant_domain_name(request)
+            result = wristband_auth._resolve_tenant_domain_name(request, "auth.example.com")
 
         assert result == "tenant1"
 
@@ -651,7 +764,7 @@ class TestWristbandAuthResolveTenantMethods:
         """Test _resolve_tenant_domain_name gets tenant from query parameter."""
         request = self.factory.get("/login?tenant_domain=tenant1")
 
-        result = self.wristband_auth._resolve_tenant_domain_name(request)
+        result = self.wristband_auth._resolve_tenant_domain_name(request, None)
 
         assert result == "tenant1"
 
@@ -684,6 +797,7 @@ class TestWristbandAuthAssertSingleParam:
             login_url="https://auth.example.com/login",
             redirect_uri="https://app.example.com/callback",
             wristband_application_vanity_domain="auth.example.com",
+            auto_configure_enabled=False,
         )
         self.wristband_auth = WristbandAuth(self.auth_config)
         self.factory = RequestFactory()
@@ -709,7 +823,7 @@ class TestWristbandAuthAssertSingleParam:
         request = self.factory.get("/test?param=value1&param=value2")
 
         with pytest.raises(
-            TypeError, match="Duplicate query parameter \\[param\\] passed from Wristband during callback"
+            TypeError, match="More than one instance of the query parameter \\[param\\] was present in the request"
         ):
             self.wristband_auth._assert_single_param(request, "param")
 
@@ -732,6 +846,7 @@ class TestClearOldestLoginStateCooie:
             login_url="https://auth.example.com/login",
             redirect_uri="https://app.example.com/callback",
             wristband_application_vanity_domain="auth.example.com",
+            auto_configure_enabled=False,
         )
         self.wristband_auth = WristbandAuth(self.auth_config)
         self.factory = RequestFactory()
@@ -748,7 +863,7 @@ class TestClearOldestLoginStateCooie:
         }
         response = HttpResponse()
 
-        self.wristband_auth._clear_oldest_login_state_cookie(request, response)
+        self.wristband_auth._clear_oldest_login_state_cookie(request, response, False)
 
         # No cookies should be cleared (max_age=0 means cleared)
         cleared_cookies = [key for key, cookie in response.cookies.items() if cookie.get("max-age") == 0]
@@ -767,7 +882,7 @@ class TestClearOldestLoginStateCooie:
         }
         response = HttpResponse()
 
-        self.wristband_auth._clear_oldest_login_state_cookie(request, response)
+        self.wristband_auth._clear_oldest_login_state_cookie(request, response, False)
 
         # Only the oldest cookie should be cleared
         cleared_cookies = [key for key, cookie in response.cookies.items() if cookie.get("max-age") == 0]
@@ -780,7 +895,7 @@ class TestClearOldestLoginStateCooie:
         assert cleared_cookie.get("max-age") == 0
         assert cleared_cookie.get("path") == "/"
         assert cleared_cookie.get("httponly") is True
-        assert cleared_cookie.get("secure") is True  # Assuming dangerously_disable_secure_cookies is False
+        assert cleared_cookie.get("secure") is True
 
     def test_clear_oldest_login_state_cookie_clears_multiple_old_cookies(self) -> None:
         """Test _clear_oldest_login_state_cookie clears multiple old cookies when more than 3 exist."""
@@ -797,7 +912,7 @@ class TestClearOldestLoginStateCooie:
         }
         response = HttpResponse()
 
-        self.wristband_auth._clear_oldest_login_state_cookie(request, response)
+        self.wristband_auth._clear_oldest_login_state_cookie(request, response, False)
 
         # The 3 oldest cookies should be cleared, keeping only the 2 newest
         cleared_cookies = [key for key, cookie in response.cookies.items() if cookie.get("max-age") == 0]
@@ -820,7 +935,7 @@ class TestClearOldestLoginStateCooie:
         }
         response = HttpResponse()
 
-        self.wristband_auth._clear_oldest_login_state_cookie(request, response)
+        self.wristband_auth._clear_oldest_login_state_cookie(request, response, False)
 
         # Should only process cookies with valid timestamp format
         # With 5 total login cookies (>=3), it keeps 2 newest valid timestamps and clears the rest
@@ -842,6 +957,7 @@ class TestClearOldestLoginStateCooie:
             redirect_uri="https://app.example.com/callback",
             wristband_application_vanity_domain="auth.example.com",
             dangerously_disable_secure_cookies=True,
+            auto_configure_enabled=False,
         )
         insecure_auth = WristbandAuth(insecure_config)
 
@@ -853,7 +969,7 @@ class TestClearOldestLoginStateCooie:
         }
         response = HttpResponse()
 
-        insecure_auth._clear_oldest_login_state_cookie(request, response)
+        insecure_auth._clear_oldest_login_state_cookie(request, response, True)
 
         # Verify the cleared cookie has secure=False
         cleared_cookies = [key for key, cookie in response.cookies.items() if cookie.get("max-age") == 0]
@@ -877,7 +993,7 @@ class TestClearOldestLoginStateCooie:
         }
         response = HttpResponse()
 
-        self.wristband_auth._clear_oldest_login_state_cookie(request, response)
+        self.wristband_auth._clear_oldest_login_state_cookie(request, response, False)
 
         # Only login state cookies should be considered
         cleared_cookies = [key for key, cookie in response.cookies.items() if cookie.get("max-age") == 0]
