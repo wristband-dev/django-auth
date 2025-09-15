@@ -5,7 +5,7 @@ import secrets
 import time
 from datetime import datetime
 from typing import Any, Literal, Optional, Union
-from urllib.parse import urlencode
+from urllib.parse import quote, urlencode
 
 import httpx
 from django.http import HttpRequest, HttpResponse
@@ -45,6 +45,7 @@ class WristbandAuth:
 
     _login_state_cookie_prefix: str = "login#"
     _login_state_cookie_separator: str = "#"
+    _return_url_char_max_len = 450
     _tenant_domain_token: str = "{tenant_domain}"
     _token_refresh_retries = 2
     _token_refresh_retry_timeout = 0.1  # 100ms
@@ -120,6 +121,8 @@ class WristbandAuth:
         default_tenant_custom_domain: Optional[str] = config.default_tenant_custom_domain
         default_tenant_domain_name: Optional[str] = config.default_tenant_domain
 
+        resovled_return_url: Optional[str] = self._resolve_return_url(request, config.return_url)
+
         # In the event we cannot determine either a tenant custom domain or subdomain, send the user to app-level login.
         if not any(
             [
@@ -130,13 +133,14 @@ class WristbandAuth:
             ]
         ):
             app_login_url = custom_application_login_page_url or f"https://{wristband_application_vanity_domain}/login"
-            response = redirect(f"{app_login_url}?client_id={client_id}")
+            state_param = f"&state={quote(resovled_return_url)}" if resovled_return_url else ""
+            response = redirect(f"{app_login_url}?client_id={client_id}{state_param}")
             response["Cache-Control"] = "no-store"
             response["Pragma"] = "no-cache"
             return response
 
         # Create login state
-        login_state = self._create_login_state(request, redirect_uri, config.custom_state, config.return_url)
+        login_state = self._create_login_state(request, redirect_uri, config.custom_state, resovled_return_url)
 
         # Generate authorization URL
         authorize_url = self._get_oauth_authorize_url(
@@ -510,6 +514,21 @@ class WristbandAuth:
         if len(values) > 1:
             raise TypeError(f"More than one instance of the query parameter [{param}] was present in the request")
         return values[0] if values else None
+
+    def _resolve_return_url(self, request: HttpRequest, return_url: Optional[str] = None) -> Optional[str]:
+        """Resolve return URL source (if any) and validate length"""
+        return_url_list = request.GET.getlist("return_url")
+        if len(return_url_list) > 1:
+            raise TypeError("More than one [return_url] query parameter was encountered")
+
+        # LoginConfig takes precedence over the request query param for return URLs.
+        resolved_return_url = return_url or (return_url_list[0] if return_url_list else None)
+
+        if resolved_return_url and len(resolved_return_url) > self._return_url_char_max_len:
+            logger.debug(f"Return URL exceeds {self._return_url_char_max_len} characters: {resolved_return_url}")
+            return None
+
+        return resolved_return_url
 
     def _create_login_state(
         self,
