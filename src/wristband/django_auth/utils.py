@@ -3,6 +3,10 @@ import json
 from typing import Any, Dict, Optional
 
 from cryptography.fernet import Fernet
+from django.http import HttpRequest
+from django.urls import resolve
+
+from .mixins import WristbandAuthRequiredMixin
 
 
 class SessionEncryptor:
@@ -77,3 +81,30 @@ class SessionEncryptor:
         decrypted_bytes = self.cipher.decrypt(encrypted_str.encode())
         result = json.loads(decrypted_bytes.decode())
         return result  # type: ignore[no-any-return]
+
+
+def is_wristband_auth_required(request: HttpRequest) -> bool:
+    """
+    Check if the current request requires Wristband authentication based on decorator or mixin usage.
+
+    Returns:
+        bool: True if auth is required, False otherwise
+    """
+    try:
+        resolver_match = resolve(request.path)
+        view_func = resolver_match.func
+
+        # Check for @wristband_auth_required decorator
+        if hasattr(view_func, "wristband_auth_required"):
+            return True
+
+        # Check for WristbandAuthRequiredMixin in CBVs
+        if hasattr(view_func, "view_class"):
+            view_class = view_func.view_class
+            if issubclass(view_class, WristbandAuthRequiredMixin):
+                return True
+
+        return False
+
+    except Exception:
+        return False
