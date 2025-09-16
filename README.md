@@ -57,6 +57,12 @@ You can learn more about how authentication works in Wristband in our documentat
   - [6) Protect Resources and Handle Token Refresh](#6-protect-resources-and-handle-token-refresh)
   - [7) Pass Your Access Token to Downstream APIs](#7-pass-your-access-token-to-downstream-apis)
   - [8) Configure CSRF Protection](#8-configure-csrf-protection)
+- [Hybrid Authentication with Django's Built-in Auth System](#hybrid-authentication-with-djangos-built-in-auth-system)
+  - [Enable Django Authentication Components](#enable-django-authentication-components)
+  - [Sync Wristband Users to Django User Model and Groups](#sync-wristband-users-to-django-user-model-and-groups)
+  - [Update Your Authentication Middleware](#update-your-authentication-middleware)
+  - [Access Django Admin Through Wristband Authentication](#access-django-admin-through-wristband-authentication)
+  - [Log users out of Django](#log-users-out-of-django)
 - [Wristband Auth Configuration Options](#wristband-auth-configuration-options)
 - [API](#api)
   - [`login()`](#loginself-request-httprequest-config-optionalloginconfig---httpresponse)
@@ -763,6 +769,7 @@ This setup ensures your Wristband-authenticated sessions are protected against C
 > **OPTIONAL:** This section is optional. The Wristband SDK works perfectly on its own without Django's built-in authentication system. Only implement this hybrid approach if your application needs Django User objects, groups, permissions, or admin interface integration.
 
 Many Django applications benefit from combining Wristband's multi-tenant authentication with Django's built-in user management system. This hybrid approach lets you leverage Wristband for secure, scalable authentication while using Django's familiar User model, groups, permissions, and admin interface for application-specific user management.
+
 This integration pattern is particularly valuable when you need to:
 
 - Map Wristband roles to Django groups for permission-based access control
