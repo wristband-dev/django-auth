@@ -12,13 +12,18 @@ For detailed setup instructions and usage guidelines, visit the project's GitHub
 
 ## Details
 
-This SDK facilitates seamless interaction with Wristband for user authentication within multi-tenant Django applications. It follows OAuth 2.1 and OpenID standards and is supported for Python 3.9+. Key functionalities encompass the following:
+This SDK facilitates seamless interaction with Wristband for user authentication within multi-tenant Django applications. It follows OAuth 2.1 and OpenID standards and is supported for Python 3.10+. Key functionalities encompass the following:
 
 - Initiating a login request by redirecting to Wristband.
 - Receiving callback requests from Wristband to complete a login request.
 - Retrieving all necessary JWT tokens and userinfo to start an application session.
 - Logging out a user from the application by revoking refresh tokens and redirecting to Wristband.
 - Checking for expired access tokens and refreshing them automatically, if necessary.
+- Function-based view decorators and class-based view mixins for Django authentication.
+- Multi-strategy authentication for API endpoints (sessions + JWTs).
+- Django REST Framework authentication class support for session and JWT bearer token strategies.
+- Authentication backend for syncing Wristband users to Django's User model.
+- Encrypted cookie-based session engine for secure, stateless session management.
 
 You can learn more about how authentication works in Wristband in our documentation:
 

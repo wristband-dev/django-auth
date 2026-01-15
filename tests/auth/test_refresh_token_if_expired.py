@@ -6,7 +6,7 @@ import pytest
 
 from wristband.django_auth.auth import WristbandAuth
 from wristband.django_auth.exceptions import InvalidGrantError, WristbandError
-from wristband.django_auth.models import AuthConfig, TokenData, TokenResponse
+from wristband.django_auth.models import AuthConfig, TokenData, WristbandTokenResponse
 
 
 class TestWristbandAuthRefreshTokenIfExpired:
@@ -81,7 +81,7 @@ class TestWristbandAuthRefreshTokenIfExpired:
         expires_at = int((datetime.now() - timedelta(hours=1)).timestamp() * 1000)
 
         # Mock the API response
-        mock_token_response = TokenResponse(
+        mock_token_response = WristbandTokenResponse(
             access_token="new_access_token",
             id_token="new_id_token",
             expires_in=3600,
@@ -120,7 +120,7 @@ class TestWristbandAuthRefreshTokenIfExpired:
         refresh_token = "expired_refresh_token"
         expires_at = int((datetime.now() - timedelta(hours=1)).timestamp() * 1000)
 
-        mock_token_response = TokenResponse(
+        mock_token_response = WristbandTokenResponse(
             access_token="new_access_token",
             id_token="new_id_token",
             expires_in=3600,
@@ -244,7 +244,7 @@ class TestWristbandAuthRefreshTokenIfExpired:
         mock_http_error.response = mock_response
 
         # Success response for second attempt
-        mock_token_response = TokenResponse(
+        mock_token_response = WristbandTokenResponse(
             access_token="new_access_token",
             id_token="new_id_token",
             expires_in=3600,
@@ -317,7 +317,7 @@ class TestWristbandAuthRefreshTokenIfExpired:
         refresh_token = "valid_refresh_token"
         expires_at = int((datetime.now() - timedelta(hours=1)).timestamp() * 1000)
 
-        mock_token_response = TokenResponse(
+        mock_token_response = WristbandTokenResponse(
             access_token="new_access_token",
             id_token="new_id_token",
             expires_in=3600,
@@ -340,7 +340,7 @@ class TestWristbandAuthRefreshTokenIfExpired:
         # Set expires_at to exactly now
         expires_at = int(datetime.now().timestamp() * 1000)
 
-        mock_token_response = TokenResponse(
+        mock_token_response = WristbandTokenResponse(
             access_token="new_access_token",
             id_token="new_id_token",
             expires_in=3600,
@@ -377,7 +377,7 @@ class TestWristbandAuthRefreshTokenIfExpired:
         refresh_token = "expired_refresh_token"
         expires_at = int((datetime.now() - timedelta(hours=1)).timestamp() * 1000)
 
-        mock_token_response = TokenResponse(
+        mock_token_response = WristbandTokenResponse(
             access_token="new_access_token",
             id_token="new_id_token",
             expires_in=3600,

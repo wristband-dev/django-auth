@@ -6,7 +6,7 @@ import pytest
 
 from wristband.django_auth.client import WristbandApiClient
 from wristband.django_auth.exceptions import InvalidGrantError, WristbandError
-from wristband.django_auth.models import SdkConfiguration, TokenResponse
+from wristband.django_auth.models import SdkConfiguration, UserInfo, WristbandTokenResponse
 
 
 class TestWristbandApiClientInit:
@@ -50,7 +50,7 @@ class TestWristbandApiClientInit:
     def test_init_none_domain_raises_valueerror(self):
         """Test that None domain raises ValueError."""
         with pytest.raises(ValueError, match="Wristband application vanity domain is required"):
-            WristbandApiClient(None, "client_id", "client_secret")
+            WristbandApiClient(None, "client_id", "client_secret")  # type:ignore
 
     def test_init_empty_client_id_raises_valueerror(self):
         """Test that empty client_id raises ValueError."""
@@ -65,7 +65,7 @@ class TestWristbandApiClientInit:
     def test_init_none_client_id_raises_valueerror(self):
         """Test that None client_id raises ValueError."""
         with pytest.raises(ValueError, match="Client ID is required"):
-            WristbandApiClient("auth.example.com", None, "client_secret")
+            WristbandApiClient("auth.example.com", None, "client_secret")  # type:ignore
 
     def test_init_empty_client_secret_raises_valueerror(self):
         """Test that empty client_secret raises ValueError."""
@@ -80,7 +80,7 @@ class TestWristbandApiClientInit:
     def test_init_none_client_secret_raises_valueerror(self):
         """Test that None client_secret raises ValueError."""
         with pytest.raises(ValueError, match="Client secret is required"):
-            WristbandApiClient("auth.example.com", "client_id", None)
+            WristbandApiClient("auth.example.com", "client_id", None)  # type:ignore
 
     @patch("wristband.django_auth.client.httpx.Client")
     def test_init_base64_encoding(self, mock_client_class):
@@ -393,7 +393,7 @@ class TestWristbandApiClientGetTokens:
         )
 
         # Verify the result
-        assert isinstance(result, TokenResponse)
+        assert isinstance(result, WristbandTokenResponse)
         assert result.access_token == "access_123"
         assert result.refresh_token == "refresh_123"
 
@@ -428,7 +428,7 @@ class TestWristbandApiClientGetTokens:
         client = WristbandApiClient("auth.example.com", "client_id", "client_secret")
 
         with pytest.raises(ValueError, match="Authorization code is required"):
-            client.get_tokens(None, "https://app.com/callback", "code_verifier")
+            client.get_tokens(None, "https://app.com/callback", "code_verifier")  # type:ignore
 
     @patch("wristband.django_auth.client.httpx.Client")
     def test_get_tokens_empty_redirect_uri_raises_valueerror(self, mock_client_class):
@@ -461,7 +461,7 @@ class TestWristbandApiClientGetTokens:
         client = WristbandApiClient("auth.example.com", "client_id", "client_secret")
 
         with pytest.raises(ValueError, match="Redirect URI is required"):
-            client.get_tokens("auth_code", None, "code_verifier")
+            client.get_tokens("auth_code", None, "code_verifier")  # type:ignore
 
     @patch("wristband.django_auth.client.httpx.Client")
     def test_get_tokens_empty_code_verifier_raises_valueerror(self, mock_client_class):
@@ -494,7 +494,7 @@ class TestWristbandApiClientGetTokens:
         client = WristbandApiClient("auth.example.com", "client_id", "client_secret")
 
         with pytest.raises(ValueError, match="Code verifier is required"):
-            client.get_tokens("auth_code", "https://app.com/callback", None)
+            client.get_tokens("auth_code", "https://app.com/callback", None)  # type:ignore
 
     @patch("wristband.django_auth.client.httpx.Client")
     def test_get_tokens_invalid_grant_error(self, mock_client_class):
@@ -603,10 +603,13 @@ class TestWristbandApiClientGetUserinfo:
 
     @patch("wristband.django_auth.client.httpx.Client")
     def test_get_userinfo_success(self, mock_client_class):
-        """Test successful userinfo retrieval."""
+        """Test successful userinfo retrieval with claim mapping."""
         mock_response = Mock()
         mock_response.json.return_value = {
             "sub": "user123",
+            "tnt_id": "tenant123",
+            "app_id": "app123",
+            "idp_name": "Wristband",
             "email": "user@example.com",
             "name": "Test User",
             "given_name": "Test",
@@ -628,10 +631,16 @@ class TestWristbandApiClientGetUserinfo:
         )
         mock_response.raise_for_status.assert_called_once()
 
-        # Verify the result
-        assert result["sub"] == "user123"
-        assert result["email"] == "user@example.com"
-        assert result["name"] == "Test User"
+        # Verify the result is a UserInfo dataclass with mapped fields
+        assert isinstance(result, UserInfo)
+        assert result.user_id == "user123"  # Mapped from 'sub'
+        assert result.tenant_id == "tenant123"  # Mapped from 'tnt_id'
+        assert result.application_id == "app123"  # Mapped from 'app_id'
+        assert result.identity_provider_name == "Wristband"  # Mapped from 'idp_name'
+        assert result.email == "user@example.com"
+        assert result.full_name == "Test User"  # Mapped from 'name'
+        assert result.given_name == "Test"
+        assert result.family_name == "User"
 
     @patch("wristband.django_auth.client.httpx.Client")
     def test_get_userinfo_http_error(self, mock_client_class):
@@ -647,38 +656,21 @@ class TestWristbandApiClientGetUserinfo:
 
         client = WristbandApiClient("auth.example.com", "client_id", "client_secret")
 
-        with pytest.raises(httpx.HTTPStatusError):
+        # Now raises WristbandError instead of HTTPStatusError
+        with pytest.raises(WristbandError) as exc_info:
             client.get_userinfo("invalid_token")
 
-        mock_response.raise_for_status.assert_called_once()
+        assert exc_info.value.get_error() == "unexpected_error"
 
     @patch("wristband.django_auth.client.httpx.Client")
     def test_get_userinfo_with_minimal_claims(self, mock_client_class):
-        """Test userinfo with minimal claims."""
-        mock_response = Mock()
-        mock_response.json.return_value = {"sub": "user123"}
-        mock_response.raise_for_status = Mock()
-
-        mock_client_instance = Mock()
-        mock_client_instance.get.return_value = mock_response
-        mock_client_class.return_value = mock_client_instance
-
-        client = WristbandApiClient("auth.example.com", "client_id", "client_secret")
-        result = client.get_userinfo("access_token_123")
-
-        assert result["sub"] == "user123"
-        assert len(result) == 1
-
-    @patch("wristband.django_auth.client.httpx.Client")
-    def test_get_userinfo_with_custom_claims(self, mock_client_class):
-        """Test userinfo with custom claims."""
+        """Test userinfo with minimal required claims."""
         mock_response = Mock()
         mock_response.json.return_value = {
             "sub": "user123",
-            "email": "user@example.com",
-            "custom_role": "admin",
-            "tenant_id": "tenant_456",
-            "permissions": ["read", "write", "admin"],
+            "tnt_id": "tenant123",
+            "app_id": "app123",
+            "idp_name": "Wristband",
         }
         mock_response.raise_for_status = Mock()
 
@@ -689,9 +681,91 @@ class TestWristbandApiClientGetUserinfo:
         client = WristbandApiClient("auth.example.com", "client_id", "client_secret")
         result = client.get_userinfo("access_token_123")
 
-        assert result["sub"] == "user123"
-        assert result["custom_role"] == "admin"
-        assert result["permissions"] == ["read", "write", "admin"]
+        assert isinstance(result, UserInfo)
+        assert result.user_id == "user123"
+        assert result.tenant_id == "tenant123"
+        assert result.application_id == "app123"
+        assert result.identity_provider_name == "Wristband"
+        # Optional fields should be None
+        assert result.email is None
+        assert result.full_name is None
+
+    @patch("wristband.django_auth.client.httpx.Client")
+    def test_get_userinfo_with_roles(self, mock_client_class):
+        """Test userinfo with roles scope."""
+        mock_response = Mock()
+        mock_response.json.return_value = {
+            "sub": "user123",
+            "tnt_id": "tenant123",
+            "app_id": "app123",
+            "idp_name": "Wristband",
+            "email": "user@example.com",
+            "roles": [
+                {"id": "role1", "name": "app:admin", "displayName": "Admin"},
+                {"id": "role2", "name": "app:user", "displayName": "User"},
+            ],
+        }
+        mock_response.raise_for_status = Mock()
+
+        mock_client_instance = Mock()
+        mock_client_instance.get.return_value = mock_response
+        mock_client_class.return_value = mock_client_instance
+
+        client = WristbandApiClient("auth.example.com", "client_id", "client_secret")
+        result = client.get_userinfo("access_token_123")
+
+        assert isinstance(result, UserInfo)
+        assert result.roles is not None
+        assert len(result.roles) == 2
+        assert result.roles[0].id == "role1"
+        assert result.roles[0].name == "app:admin"
+        assert result.roles[0].display_name == "Admin"
+
+    @patch("wristband.django_auth.client.httpx.Client")
+    def test_get_userinfo_with_custom_claims(self, mock_client_class):
+        """Test userinfo with custom claims."""
+        mock_response = Mock()
+        mock_response.json.return_value = {
+            "sub": "user123",
+            "tnt_id": "tenant123",
+            "app_id": "app123",
+            "idp_name": "Wristband",
+            "email": "user@example.com",
+            "custom_claims": {"department": "Engineering", "employee_id": "EMP123"},
+        }
+        mock_response.raise_for_status = Mock()
+
+        mock_client_instance = Mock()
+        mock_client_instance.get.return_value = mock_response
+        mock_client_class.return_value = mock_client_instance
+
+        client = WristbandApiClient("auth.example.com", "client_id", "client_secret")
+        result = client.get_userinfo("access_token_123")
+
+        assert isinstance(result, UserInfo)
+        assert result.custom_claims is not None
+        assert result.custom_claims["department"] == "Engineering"
+        assert result.custom_claims["employee_id"] == "EMP123"
+
+    @patch("wristband.django_auth.client.httpx.Client")
+    def test_get_userinfo_json_decode_error(self, mock_client_class):
+        """Test JSON decode error in userinfo endpoint."""
+        mock_response = Mock()
+        mock_response.json.side_effect = ValueError("Invalid JSON")
+        mock_response.raise_for_status = Mock()
+
+        mock_client_instance = Mock()
+        mock_client_instance.get.return_value = mock_response
+        mock_client_class.return_value = mock_client_instance
+
+        client = WristbandApiClient("auth.example.com", "client_id", "client_secret")
+
+        # Now raises WristbandError instead of ValueError
+        with pytest.raises(WristbandError) as exc_info:
+            client.get_userinfo("access_token")
+
+        assert exc_info.value.get_error() == "unexpected_error"
+        assert "Invalid JSON" in exc_info.value.get_error_description()
 
 
 class TestWristbandApiClientRefreshToken:
@@ -725,7 +799,7 @@ class TestWristbandApiClientRefreshToken:
         )
 
         # Verify the result
-        assert isinstance(result, TokenResponse)
+        assert isinstance(result, WristbandTokenResponse)
         assert result.access_token == "new_access_123"
         assert result.refresh_token == "new_refresh_123"
 
@@ -929,8 +1003,12 @@ class TestWristbandApiClientNetworkErrors:
 
         client = WristbandApiClient("auth.example.com", "client_id", "client_secret")
 
-        with pytest.raises(httpx.ReadTimeout, match="Read timeout"):
+        # Now raises WristbandError wrapping the timeout
+        with pytest.raises(WristbandError) as exc_info:
             client.get_userinfo("access_token")
+
+        assert exc_info.value.get_error() == "unexpected_error"
+        assert "Read timeout" in exc_info.value.get_error_description()
 
 
 class TestWristbandApiClientEdgeCases:
@@ -955,7 +1033,7 @@ class TestWristbandApiClientEdgeCases:
 
     @patch("wristband.django_auth.client.httpx.Client")
     def test_malformed_token_response(self, mock_client_class):
-        """Test handling of malformed token response from TokenResponse.from_api_response."""
+        """Test handling of malformed token response from WristbandTokenResponse.from_api_response."""
         mock_response = Mock()
         mock_response.status_code = 200
         mock_response.json.return_value = {
@@ -969,7 +1047,7 @@ class TestWristbandApiClientEdgeCases:
 
         client = WristbandApiClient("auth.example.com", "client_id", "client_secret")
 
-        # Should raise KeyError when TokenResponse.from_api_response tries to access missing fields
+        # Should raise KeyError when WristbandTokenResponse.from_api_response tries to access missing fields
         with pytest.raises(KeyError):
             client.get_tokens("code", "uri", "verifier")
 
@@ -986,8 +1064,12 @@ class TestWristbandApiClientEdgeCases:
 
         client = WristbandApiClient("auth.example.com", "client_id", "client_secret")
 
-        with pytest.raises(ValueError, match="Invalid JSON"):
+        # Now raises WristbandError wrapping the ValueError
+        with pytest.raises(WristbandError) as exc_info:
             client.get_userinfo("access_token")
+
+        assert exc_info.value.get_error() == "unexpected_error"
+        assert "Invalid JSON" in exc_info.value.get_error_description()
 
     @patch("wristband.django_auth.client.httpx.Client")
     def test_unicode_handling_in_credentials(self, mock_client_class):
@@ -1065,27 +1147,40 @@ class TestWristbandApiClientEdgeCases:
         assert len(result.refresh_token) == 2000
 
     @patch("wristband.django_auth.client.httpx.Client")
-    def test_userinfo_with_complex_nested_data(self, mock_client_class):
-        """Test userinfo with complex nested data structures."""
-        complex_userinfo = {
-            "sub": "user123",
-            "email": "user@example.com",
-            "address": {
-                "street_address": "123 Main St",
-                "locality": "Anytown",
-                "region": "CA",
-                "postal_code": "12345",
-                "country": "US",
-            },
-            "groups": [
-                {"id": "group1", "name": "Admins", "roles": ["admin", "user"]},
-                {"id": "group2", "name": "Users", "roles": ["user"]},
-            ],
-            "custom_claims": {"tenant_id": "tenant123", "permissions": {"read": True, "write": True, "delete": False}},
-        }
-
+    def test_get_userinfo_with_complex_custom_claims(self, mock_client_class):
+        """Test userinfo with complex nested custom claims."""
         mock_response = Mock()
-        mock_response.json.return_value = complex_userinfo
+        mock_response.json.return_value = {
+            "sub": "user123",
+            "tnt_id": "tenant123",
+            "app_id": "app123",
+            "idp_name": "Wristband",
+            "email": "user@example.com",
+            "custom_claims": {
+                "address": {
+                    "street_address": "123 Main St",
+                    "locality": "Anytown",
+                    "region": "CA",
+                    "postal_code": "12345",
+                    "country": "US",
+                },
+                "groups": [
+                    {"id": "group1", "name": "Admins", "roles": ["admin", "user"]},
+                    {"id": "group2", "name": "Users", "roles": ["user"]},
+                ],
+                "permissions": {
+                    "read": True,
+                    "write": True,
+                    "delete": False,
+                    "nested": {"level2": {"level3": "deep_value"}},
+                },
+                "metadata": {
+                    "created_at": 1640995200000,
+                    "updated_at": 1735689600000,
+                    "tags": ["vip", "enterprise", "premium"],
+                },
+            },
+        }
         mock_response.raise_for_status = Mock()
 
         mock_client_instance = Mock()
@@ -1095,10 +1190,106 @@ class TestWristbandApiClientEdgeCases:
         client = WristbandApiClient("auth.example.com", "client_id", "client_secret")
         result = client.get_userinfo("access_token")
 
-        assert result["sub"] == "user123"
-        assert result["address"]["street_address"] == "123 Main St"
-        assert result["groups"][0]["roles"] == ["admin", "user"]
-        assert result["custom_claims"]["permissions"]["read"] is True
+        assert isinstance(result, UserInfo)
+        assert result.user_id == "user123"
+        assert result.email == "user@example.com"
+
+        # Verify complex custom claims are preserved
+        assert result.custom_claims is not None
+        assert result.custom_claims["address"]["street_address"] == "123 Main St"
+        assert result.custom_claims["address"]["postal_code"] == "12345"
+        assert result.custom_claims["groups"][0]["name"] == "Admins"
+        assert result.custom_claims["groups"][0]["roles"] == ["admin", "user"]
+        assert result.custom_claims["groups"][1]["roles"] == ["user"]
+        assert result.custom_claims["permissions"]["read"] is True
+        assert result.custom_claims["permissions"]["write"] is True
+        assert result.custom_claims["permissions"]["delete"] is False
+        assert result.custom_claims["permissions"]["nested"]["level2"]["level3"] == "deep_value"
+        assert result.custom_claims["metadata"]["tags"] == ["vip", "enterprise", "premium"]
+
+    @patch("wristband.django_auth.client.httpx.Client")
+    def test_get_userinfo_with_all_profile_scope_claims(self, mock_client_class):
+        """Test userinfo with all profile scope claims mapped correctly."""
+        mock_response = Mock()
+        mock_response.json.return_value = {
+            # Required fields
+            "sub": "user123",
+            "tnt_id": "tenant123",
+            "app_id": "app123",
+            "idp_name": "Wristband",
+            # Profile scope - all fields
+            "name": "Robert Jay Smith",
+            "given_name": "Robert",
+            "family_name": "Smith",
+            "middle_name": "Jay",
+            "nickname": "Bob",
+            "preferred_username": "bobsmith",
+            "picture": "https://example.com/avatar.jpg",
+            "gender": "male",
+            "birthdate": "1990-01-15",
+            "zoneinfo": "America/Los_Angeles",
+            "locale": "en-US",
+            "updated_at": 1640995200,
+        }
+        mock_response.raise_for_status = Mock()
+
+        mock_client_instance = Mock()
+        mock_client_instance.get.return_value = mock_response
+        mock_client_class.return_value = mock_client_instance
+
+        client = WristbandApiClient("auth.example.com", "client_id", "client_secret")
+        result = client.get_userinfo("access_token")
+
+        assert isinstance(result, UserInfo)
+
+        # Verify OIDC claims are mapped to User entity field names
+        assert result.user_id == "user123"  # sub -> user_id
+        assert result.tenant_id == "tenant123"  # tnt_id -> tenant_id
+        assert result.application_id == "app123"  # app_id -> application_id
+        assert result.identity_provider_name == "Wristband"  # idp_name -> identity_provider_name
+        assert result.full_name == "Robert Jay Smith"  # name -> full_name
+        assert result.given_name == "Robert"
+        assert result.family_name == "Smith"
+        assert result.middle_name == "Jay"
+        assert result.nickname == "Bob"
+        assert result.display_name == "bobsmith"  # preferred_username -> display_name
+        assert result.picture_url == "https://example.com/avatar.jpg"  # picture -> picture_url
+        assert result.gender == "male"
+        assert result.birthdate == "1990-01-15"
+        assert result.time_zone == "America/Los_Angeles"  # zoneinfo -> time_zone
+        assert result.locale == "en-US"
+        assert result.updated_at == 1640995200
+
+    @patch("wristband.django_auth.client.httpx.Client")
+    def test_get_userinfo_with_email_and_phone_scopes(self, mock_client_class):
+        """Test userinfo with email and phone scope claims."""
+        mock_response = Mock()
+        mock_response.json.return_value = {
+            "sub": "user123",
+            "tnt_id": "tenant123",
+            "app_id": "app123",
+            "idp_name": "Wristband",
+            # Email scope
+            "email": "user@example.com",
+            "email_verified": True,
+            # Phone scope
+            "phone_number": "+14155551234",
+            "phone_number_verified": False,
+        }
+        mock_response.raise_for_status = Mock()
+
+        mock_client_instance = Mock()
+        mock_client_instance.get.return_value = mock_response
+        mock_client_class.return_value = mock_client_instance
+
+        client = WristbandApiClient("auth.example.com", "client_id", "client_secret")
+        result = client.get_userinfo("access_token")
+
+        assert isinstance(result, UserInfo)
+        assert result.email == "user@example.com"
+        assert result.email_verified is True
+        assert result.phone_number == "+14155551234"
+        assert result.phone_number_verified is False
 
     @patch("wristband.django_auth.client.httpx.Client")
     def test_empty_error_response(self, mock_client_class):
@@ -1174,7 +1365,14 @@ class TestWristbandApiClientIntegration:
             "scope": "openid email",
         }
 
-        userinfo_response_data = {"sub": "user123", "email": "user@example.com", "name": "Test User"}
+        userinfo_response_data = {
+            "sub": "user123",
+            "tnt_id": "tenant123",
+            "app_id": "app123",
+            "idp_name": "Wristband",
+            "email": "user@example.com",
+            "name": "Test User",
+        }
 
         refresh_response_data = {
             "access_token": "new_access_123",
@@ -1221,8 +1419,11 @@ class TestWristbandApiClientIntegration:
 
         # 2. Get user info
         user_info = client.get_userinfo(tokens.access_token)
-        assert user_info["sub"] == "user123"
-        assert user_info["email"] == "user@example.com"
+
+        assert isinstance(user_info, UserInfo)
+        assert user_info.user_id == "user123"
+        assert user_info.email == "user@example.com"
+        assert user_info.full_name == "Test User"
 
         # 3. Refresh tokens
         new_tokens = client.refresh_token(tokens.refresh_token)
@@ -1299,13 +1500,13 @@ class TestWristbandApiClientIntegration:
 
         for invalid_value in invalid_values:
             with pytest.raises(ValueError, match="Authorization code is required"):
-                client.get_tokens(invalid_value, "https://test.com", "verifier")
+                client.get_tokens(invalid_value, "https://test.com", "verifier")  # type: ignore
 
             with pytest.raises(ValueError, match="Redirect URI is required"):
-                client.get_tokens("code", invalid_value, "verifier")
+                client.get_tokens("code", invalid_value, "verifier")  # type: ignore
 
             with pytest.raises(ValueError, match="Code verifier is required"):
-                client.get_tokens("code", "https://test.com", invalid_value)
+                client.get_tokens("code", "https://test.com", invalid_value)  # type: ignore
 
 
 class TestWristbandApiClientDocumentationExamples:
@@ -1324,7 +1525,14 @@ class TestWristbandApiClientDocumentationExamples:
             "scope": "openid email",
         }
 
-        userinfo_response = {"sub": "user123", "email": "user@example.com", "name": "Test User"}
+        userinfo_response = {
+            "sub": "user123",
+            "tnt_id": "tenant123",
+            "app_id": "app123",
+            "idp_name": "Wristband",
+            "email": "user@example.com",
+            "name": "Test User",
+        }
 
         mock_token_resp = Mock()
         mock_token_resp.status_code = 200
@@ -1347,8 +1555,11 @@ class TestWristbandApiClientDocumentationExamples:
 
         # Verify results match documentation
         assert tokens.access_token == "access_token_from_docs"
-        assert user_info["sub"] == "user123"
-        assert user_info["email"] == "user@example.com"
+
+        assert isinstance(user_info, UserInfo)
+        assert user_info.user_id == "user123"
+        assert user_info.email == "user@example.com"
+        assert user_info.full_name == "Test User"
 
     @patch("wristband.django_auth.client.httpx.Client")
     def test_invalid_grant_documentation_example(self, mock_client_class):

@@ -11,7 +11,8 @@ import base64
 import httpx
 
 from .exceptions import InvalidGrantError, WristbandError
-from .models import SdkConfiguration, TokenResponse, UserInfo
+from .models import RawUserInfo, SdkConfiguration, UserInfo, WristbandTokenResponse
+from .utils import map_userinfo_claims
 
 
 class WristbandApiClient:
@@ -98,7 +99,7 @@ class WristbandApiClient:
         except Exception as e:
             raise WristbandError("unexpected_error", str(e))
 
-    def get_tokens(self, code: str, redirect_uri: str, code_verifier: str) -> TokenResponse:
+    def get_tokens(self, code: str, redirect_uri: str, code_verifier: str) -> WristbandTokenResponse:
         """
         Exchange an authorization code for access, ID, and refresh tokens.
 
@@ -121,7 +122,7 @@ class WristbandApiClient:
                 prevent authorization code interception attacks.
 
         Returns:
-            TokenResponse: An object containing the OAuth 2.0 tokens including:
+            WristbandTokenResponse: An object containing the OAuth 2.0 tokens including:
                 - access_token: Bearer token for API access
                 - refresh_token: Token for refreshing the access token
                 - id_token: JWT containing user identity information
@@ -165,7 +166,7 @@ class WristbandApiClient:
             error_description = data.get("error_description") or "Unknown error"
             raise WristbandError(error, error_description)
 
-        return TokenResponse.from_api_response(response.json())
+        return WristbandTokenResponse.from_api_response(response.json())
 
     def get_userinfo(self, access_token: str) -> UserInfo:
         """
@@ -185,14 +186,7 @@ class WristbandApiClient:
                 obtained from get_tokens() or refresh_token().
 
         Returns:
-            UserInfo: A dictionary containing user claims and information. Common
-                claims include:
-                - sub: Subject identifier (user ID)
-                - email: User's email address (if 'email' scope granted)
-                - name: User's full name (if 'profile' scope granted)
-                - given_name: User's first name
-                - family_name: User's last name
-                - picture: URL to user's profile picture
+            UserInfo: A dictionary containing user claims and information.
                 Additional custom claims may be present based on your configuration.
 
         Raises:
@@ -208,14 +202,19 @@ class WristbandApiClient:
             RFC 6749 Section 7: https://tools.ietf.org/html/rfc6749#section-7
             OpenID Connect UserInfo: https://openid.net/specs/openid-connect-core-1_0.html#UserInfo
         """
-        response = self.client.get(
-            self.base_url + "/oauth2/userinfo",
-            headers={"Authorization": f"Bearer {access_token}"},
-        )
-        response.raise_for_status()
-        return response.json()  # type: ignore[no-any-return]
+        try:
+            response = self.client.get(
+                self.base_url + "/oauth2/userinfo",
+                headers={"Authorization": f"Bearer {access_token}"},
+            )
+            response.raise_for_status()
+            raw_userinfo = RawUserInfo.from_api_response(response.json())
+            userinfo = map_userinfo_claims(raw_userinfo)
+            return userinfo
+        except Exception as e:
+            raise WristbandError("unexpected_error", str(e))
 
-    def refresh_token(self, refresh_token: str) -> TokenResponse:
+    def refresh_token(self, refresh_token: str) -> WristbandTokenResponse:
         """
         Refresh an access token using a refresh token.
 
@@ -232,7 +231,7 @@ class WristbandApiClient:
                 new access tokens without user interaction.
 
         Returns:
-            TokenResponse: An object containing the new OAuth 2.0 tokens:
+            WristbandTokenResponse: An object containing the new OAuth 2.0 tokens:
                 - access_token: New bearer token for API access
                 - refresh_token: New or existing refresh token
                 - id_token: Updated JWT with current user information
@@ -264,7 +263,7 @@ class WristbandApiClient:
             # Raises for 4xx or 5xx
             response.raise_for_status()
 
-        return TokenResponse.from_api_response(response.json())
+        return WristbandTokenResponse.from_api_response(response.json())
 
     def revoke_refresh_token(self, refresh_token: str) -> None:
         """

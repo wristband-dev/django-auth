@@ -23,81 +23,164 @@
 
 # Wristband Multi-Tenant Authentication SDK for Python Django
 
-This module facilitates seamless interaction with Wristband for user authentication within multi-tenant [Django applications](https://www.djangoproject.com/). It follows OAuth 2.1 and OpenID standards.
+Enterprise-ready authentication for multi-tenant [Django applications](https://www.djangoproject.com/) using OAuth 2.1 and OpenID Connect standards. Optional support for [Django REST Framework](https://www.django-rest-framework.org/) (DRF) is included.
 
-Key functionalities encompass the following:
+<br>
 
-- Initiating a login request by redirecting to Wristband.
-- Receiving callback requests from Wristband to complete a login request.
-- Retrieving all necessary JWT tokens and userinfo to start an application session.
-- Logging out a user from the application by revoking refresh tokens and redirecting to Wristband.
-- Checking for expired access tokens and refreshing them automatically, if necessary.
+## Overview
 
-You can learn more about how authentication works in Wristband in our documentation:
+This SDK provides complete authentication integration with Wristband, including:
+
+- **Login flow** - Redirect to Wristband and handle OAuth callbacks
+- **Session management** - Encrypted cookie-based sessions
+- **Token handling** - Automatic access token refresh and validation
+- **Logout flow** - Token revocation and session cleanup
+- **Multi-tenancy** - Support for tenant subdomains and custom domains
+
+Learn more about Wristband's authentication patterns:
 
 - [Backend Server Integration Pattern](https://docs.wristband.dev/docs/backend-server-integration)
 - [Login Workflow In Depth](https://docs.wristband.dev/docs/login-workflow)
 
+> **💡 Learn by Example**
+>
+> Want to see the SDK in action? Check out our [Django demo application](#wristband-multi-tenant-django-demo-app). The demo showcases real-world authentication patterns and best practices.
+
+<br>
+
 ---
+
+<br>
 
 ## Table of Contents
 
+- [Migrating From Older SDK Versions](#migrating-from-older-sdk-versions)
 - [Prerequisites](#prerequisites)
 - [Installation](#installation)
+  - [Basic Installation](#basic-installation)
+  - [With Django REST Framework Support (Optional)](#with-django-rest-framework-support-optional)
 - [Usage](#usage)
   - [1) Configure Wristband Settings](#1-configure-wristband-settings)
   - [2) Initialize the SDK](#2-initialize-the-sdk)
-  - [3) Set Up Session Storage](#3-set-up-session-storage)
-  - [4) Add Auth Views/Endpoints](#4-add-auth-viewsendpoints)
+  - [3) Set Up Session Management](#3-set-up-session-management)
+  - [4) Add Core Auth Views](#4-add-core-auth-views)
     - [URL Configuration](#url-configuration)
     - [Login View/Endpoint](#login-viewendpoint)
     - [Callback View/Endpoint](#callback-viewendpoint)
     - [Logout View/Endpoint](#logout-viewendpoint)
-  - [5) Add Template Context Processor](#5-add-template-context-processor)
-  - [6) Protect Resources and Handle Token Refresh](#6-protect-resources-and-handle-token-refresh)
-  - [7) Pass Your Access Token to Downstream APIs](#7-pass-your-access-token-to-downstream-apis)
-  - [8) Configure CSRF Protection](#8-configure-csrf-protection)
-- [Hybrid Authentication with Django's Built-in Auth System](#hybrid-authentication-with-djangos-built-in-auth-system)
+  - [5) Protect Your Django Views](#5-protect-your-django-views)
+    - [Function-Based View Protection](#function-based-view-protection)
+    - [Class-Based View Protection](#class-based-view-protection)
+    - [Django REST Framework Protection (Optional)](#django-rest-framework-protection-optional)
+  - [6) Add API Endpoints (API-First Apps Only)](#6-add-api-endpoints-api-first-apps-only)
+    - [Session View/Endpoint](#session-viewendpoint)
+    - [Token View/Endpoint (Optional)](#token-viewendpoint-optional)
+  - [7) Add Template Context Processor](#7-add-template-context-processor)
+  - [8) Pass Your Access Token to APIs](#8-pass-your-access-token-to-apis)
+  - [9) Configure CSRF Protection](#9-configure-csrf-protection)
+- [Integration with Django's Built-in Auth System](#integration-with-djangos-built-in-auth-system)
   - [Enable Django Authentication Components](#enable-django-authentication-components)
-  - [Sync Wristband Users to Django User Model and Groups](#sync-wristband-users-to-django-user-model-and-groups)
-  - [Update Your Authentication Middleware](#update-your-authentication-middleware)
+  - [Sync Wristband Users to Django User Model](#sync-wristband-users-to-django-user-model)
+  - [How the Authentication Backend Works](#how-the-authentication-backend-works)
+  - [Using Django's Built-in View Protection (Optional)](#using-djangos-built-in-view-protection-optional)
+  - [Log Users Out of Django](#log-users-out-of-django)
   - [Access Django Admin Through Wristband Authentication](#access-django-admin-through-wristband-authentication)
-  - [Log users out of Django](#log-users-out-of-django)
-- [Wristband Auth Configuration Options](#wristband-auth-configuration-options)
-- [API](#api)
-  - [`login()`](#loginself-request-httprequest-config-optionalloginconfig---httpresponse)
-  - [`callback()`](#callbackself-request-httprequest---callbackresult)
-  - [`logout()`](#logoutself-request-httprequest-config-optionallogoutconfig---httpresponse)
-  - [`refresh_token_if_expired()`](#refresh_token_if_expiredself-refresh_token-optionalstr-expires_at-optionalint---tokendata--none)
+- [Auth Configuration Options](#auth-configuration-options)
+  - [WristbandAuth()](#wristbandauth)
+  - [WristbandAuth.discover()](#wristbandauthdiscover)
+- [Auth API](#auth-api)
+  - [login()](#login)
+  - [callback()](#callback)
+  - [create_callback_response()](#create_callback_response)
+  - [logout()](#logout)
+  - [refresh_token_if_expired()](#refresh_token_if_expired)
+- [Session Management](#session-management)
+  - [Session Fields](#session-fields)
+  - [Type Hints for Session Data](#type-hints-for-session-data)
+  - [Session Access Patterns](#session-access-patterns)
+  - [Session Helper Functions](#session-helper-functions)
+- [Authentication Strategies](#authentication-strategies)
+  - [Available Authentication Strategies](#available-authentication-strategies)
+  - [Unauthenticated Request Behavior](#unauthenticated-request-behavior)
+  - [create_auth_decorator()](#create_auth_decorator)
+  - [create_auth_mixin()](#create_auth_mixin)
+  - [create_drf_session_auth()](#create_drf_session_auth)
+  - [create_drf_jwt_auth()](#create_drf_jwt_auth)
+  - [Multi-Strategy Authentication with DRF](#multi-strategy-authentication-with-drf)
+  - [JWT Authentication Details](#jwt-authentication-details)
+  - [Choosing the Right Strategy](#choosing-the-right-strategy)
+- [Debug Logging](#debug-logging)
+- [Related Wristband SDKs](#related-wristband-sdks)
 - [Wristband Multi-Tenant Django Demo App](#wristband-multi-tenant-django-demo-app)
 - [Questions](#questions)
 
 <br/>
 
+---
+
+<br>
+
+## Migrating From Older SDK Versions
+
+On an older version of our SDK? Check out our migration guide:
+
+- [Instructions for migrating to Version 1.x (latest)](migration/v1/README.md)
+
+<br>
+
 ## Prerequisites
 
-Before installing the SDK, ensure your environment meets the following requirements:
-- [Python](https://www.python.org) ≥ 3.9
-- [Django](https://www.djangoproject.com) ≥ 4.2 and < 6.0
+> **⚡ Try Our Django Quickstart!**
+>
+> For the fastest way to get started with Django authentication, follow our [Quick Start Guide](https://docs.wristband.dev/docs/auth-quick-start). It walks you through setting up a working Django app with Wristband authentication in minutes. Refer back to this README for comprehensive documentation and advanced usage patterns.
+
+Before installing, ensure you have:
+
+- [Python](https://www.python.org) ≥ 3.10
+- [Django](https://www.djangoproject.com) ≥ 4.2
+- Your preferred package manager (pip, poetry, uv, etc.)
+
+If you are using Django REST Framework, ensure you also have:
+
+- [Django REST Framework](https://www.django-rest-framework.org/) ≥ 3.15.0
 
 <br/>
 
 ## Installation
 
-**Install the package from PyPI**
-```sh
+Install the `wristband-django-auth` package from PyPI.
+
+### Basic Installation
+
+```bash
+# With pip
 pip install wristband-django-auth
-```
 
-**Or if using poetry**
-```sh
+# Or if using poetry
 poetry add wristband-django-auth
-```
 
-**Or if using pipenv**
-```sh
+# Or if using pipenv
 pipenv install wristband-django-auth
 ```
+
+### With Django REST Framework Support (Optional)
+
+If you're using [Django REST Framework](https://www.django-rest-framework.org/) (DRF) and want to use DRF authentication classes:
+
+```bash
+# With pip
+pip install wristband-django-auth[drf]
+
+# If using poetry, either:
+poetry add wristband-django-auth[drf]
+# or:
+poetry add wristband-django-auth --extras drf
+
+# If using pipenv:
+pipenv install wristband-django-auth[drf]
+```
+
+> **Note:** The basic installation includes decorators that work with traditional Django views and DRF function-based views. The `[drf]` extra adds authentication classes for DRF class-based views (APIView, ViewSets, etc.).
 
 <br>
 
@@ -128,31 +211,27 @@ Create an instance of `WristbandAuth` in a dedicated authentication module somew
 
 ```python
 # your_app/wristband.py
+
 from django.conf import settings
 from wristband.django_auth import AuthConfig, WristbandAuth
 
 __all__ = ['wristband_auth']
 
-# Configure Wristband authentication
-def _create_wristband_auth() -> WristbandAuth:
-    wristband_settings = settings.WRISTBAND_AUTH
-    
-    auth_config = AuthConfig(
-        client_id=wristband_settings['client_id'],
-        client_secret=wristband_settings['client_secret'],
-        wristband_application_vanity_domain=wristband_settings['wristband_application_vanity_domain'],
-    )
-    return WristbandAuth(auth_config)
-
 # Initialize Wristband auth instance
-wristband_auth = _create_wristband_auth()
+wristband_auth = WristbandAuth(AuthConfig(**settings.WRISTBAND_AUTH))
 ```
 
 <br>
 
-### 3) Set Up Session Storage
+### 3) Set Up Session Management
 
-This Wristband authentication SDK is unopinionated about how you store and manage your application session data after the user has authenticated. It is common practice to leverage Django's built-in session framework for storing and managing your application session data. Django sessions are secure, well-tested, and provide flexible backend storage options.
+This Wristband authentication SDK is unopinionated about how you store and manage your application session data after the user has authenticated. The SDK includes a custom encrypted cookie-based session engine built to work with Django's built-in session framework.
+
+The encrypted cookie-based session engine provides:
+- **No backend infrastructure required** - Session data is encrypted and stored in cookies
+- **Stateless sessions** - No database or cache lookups needed
+- **Security** - Data is encrypted using AES-256-GCM before storage
+- **Simplicity** - Works out of the box with no additional setup
 
 Django sessions are enabled by default when you include the required middleware and apps in your settings:
 
@@ -173,80 +252,94 @@ MIDDLEWARE = [
 ]
 ```
 
-Django's session framework supports multiple options out of the box -- database sessions (default), cached sessions, file-based sessions, cookie-based sessions, and cached database sessions. The default database backend works well for most applications:
-
-```python
-# your_project/settings.py
-
-# ...
-
-# Database sessions (default) - stores in django_session table
-SESSION_ENGINE = 'django.contrib.sessions.backends.db'
-
-# Cookie-based sessions - stores signed (not encrypted) data in cookies
-# SESSION_ENGINE = 'django.contrib.sessions.backends.signed_cookies'
-
-# Cache sessions - stores in configured cache backend
-# SESSION_ENGINE = 'django.contrib.sessions.backends.cache'
-
-# Cached database sessions - fast reads with reliable persistence
-# SESSION_ENGINE = 'django.contrib.sessions.backends.cached_db'
-```
-
-Make sure to configure Django sessions to work optimally with Wristband authentication, ensuring sessions stay active during user activity and expire after periods of inactivity:
+Configure Django to use Wristband's encrypted cookie session engine and set up secure session cookies:
 
 > [!NOTE]
-> If you use Safari browser When developing and testing on `localhost`, you may need to set `SESSION_COOKIE_SECURE = False`. Remember to set the value back to `True` for Production!
+> If you use Safari browser when developing and testing on `localhost`, you may need to set `SESSION_COOKIE_SECURE = False`. Remember to set the value back to `True` for Production!
 
 ```python
-# your_project/settings.py
+# your_project/settings.py (continued)
 
 # ...
 
-# Session configuration
-SESSION_SAVE_EVERY_REQUEST = True  # Keep a rolling session expiration time as long as user is active
+# Wristband encrypted cookie-based sessions (recommended)
+SESSION_ENGINE = 'wristband.django_auth.sessions.backends.encrypted_cookies'
 SESSION_COOKIE_AGE = 3600  # 1 hour of inactivity, adjust as needed
 SESSION_COOKIE_SECURE = True  # IMPORTANT: Set to True in Production!!
+SESSION_COOKIE_HTTPONLY = True  # Prevent JavaScript access to session cookie
+SESSION_COOKIE_SAMESITE = 'Lax'  # Reasonably secure default option
+
+# Session encryption secret (32+ characters recommended)
+# IMPORTANT: In production, use a strong, randomly-generated secret!
+WRISTBAND_SESSION_SECRET = 'your-secret-key-at-least-32-characters-long'
 ```
+
+> [!TIP]
+> **Alternative Session Backends**
+>
+> Django's session framework supports multiple storage options if encrypted cookies don't fit your needs:
+>
+> - **Database sessions** (default): `SESSION_ENGINE = 'django.contrib.sessions.backends.db'`
+> - **Cache sessions**: `SESSION_ENGINE = 'django.contrib.sessions.backends.cache'`  
+> - **File-based sessions**: `SESSION_ENGINE = 'django.contrib.sessions.backends.file'`
+> - **Cached database sessions**: `SESSION_ENGINE = 'django.contrib.sessions.backends.cached_db'`
+>
+> For server-side session storage requirements, consider these alternatives or third-party packages like [django-redis](https://github.com/jazzband/django-redis).
 
 <br>
 
 ### 4) Add Auth Views/Endpoints
 
-There are <ins>three core authentication views/endpoints</ins> your Django application should expose to facilitate both the Login and Logout workflows in Wristband. You'll need to add them to your Django URL configuration and create corresponding views.
+There are **three core authentication views/endpoints** your Django application should expose to facilitate authentication workflows in Wristband. You'll need to add these to your Django URL configuration and create corresponding views:
+
+- Login View/Endpoint
+- Callback View/Endpoint  
+- Logout View/Endpoint
+
+> **💡 API-First Applications**
+>
+> If you're building an SPA, mobile app, or using Wristband frontend SDKs, you'll also need additional API endpoints covered in [Step 6](#6-add-api-endpoints-api-first-apps-only).
+
+> [!NOTE]
+> **Traditional Django apps** (server-rendered templates) only need the three core views. **API-first applications** (SPAs, mobile apps, or those using Wristband frontend SDKs) will also need the Session Endpoint. The Token Endpoint is only needed if your frontend makes direct API calls requiring the user's access token.
 
 #### URL Configuration
 
-First, include your app's URLs in the main project URLs:
-
-```python
-# your_project/urls.py
-from django.urls import path, include
-
-urlpatterns = [
-    # Your other project URLs...
-    
-    # Include your app's URLs
-    path('', include('your_app.urls')),
-]
-```
-
-Then, add the authentication URLs to your Django app:
+Include your app's URLs in the main project URLs file, and add your authentication URLs to your Django app:
 
 ```python
 # your_app/urls.py
+
 from django.urls import path
 from . import auth_views
 
 app_name = 'your_app'
 
+# Route paths can be whatever you prefer
 urlpatterns = [
     # Your other app URLs...
     
     # Wristband Auth Endpoints (URL path values can be anything you want)
-    path('auth/login/', auth_views.login_view, name='login'),
-    path('auth/callback/', auth_views.callback_view, name='callback'),
-    path('auth/logout/', auth_views.logout_view, name='logout'),
+    path('auth/login/', auth_views.login_endpoint, name='login'),
+    path('auth/callback/', auth_views.callback_endpoint, name='callback'),
+    path('auth/logout/', auth_views.logout_endpoint, name='logout'),
+]
+```
+
+**For API-first applications (SPAs, mobile apps, or using Wristband frontend SDKs)**, also add:
+
+```python
+# your_app/urls.py (continued)
+
+# Route paths can be whatever you prefer
+urlpatterns = [
+    # ... core auth URLs above ...
+    
+    # Session Endpoint - required for Wristband frontend SDKs
+    path('auth/session/', auth_views.session_endpoint, name='session'),
+    
+    # Token Endpoint - optional, only if frontend needs access tokens
+    # path('auth/token/', auth_views.token_endpoint, name='token'),
 ]
 ```
 
@@ -258,15 +351,16 @@ The goal of the Login View/Endpoint is to initiate an auth request by redirectin
 
 ```python
 # your_app/auth_views.py
+
 from django.http import HttpRequest, HttpResponse
 from django.views.decorators.http import require_GET
-from wristband.django_auth import CallbackResultType, LogoutConfig
+from wristband.django_auth import LogoutConfig, RedirectRequiredCallbackResult, session_from_callback
 
 # Import your configured Wristband auth instance
-from .wristband import wristband_auth
+from your_app.wristband import wristband_auth
 
 @require_GET
-def login_view(request: HttpRequest) -> HttpResponse:
+def login_endpoint(request: HttpRequest) -> HttpResponse:
     """Initiate authentication by redirecting to Wristband"""
     return wristband_auth.login(request)
 
@@ -280,36 +374,24 @@ def login_view(request: HttpRequest) -> HttpResponse:
 The goal of the Callback View/Endpoint is to receive incoming calls from Wristband after the user has authenticated and ensure that the Login State cookie contains all auth request state in order to complete the Login Workflow. From there, it will call the [Wristband Token Endpoint](https://docs.wristband.dev/reference/tokenv1) to fetch necessary JWTs, call the [Wristband Userinfo Endpoint](https://docs.wristband.dev/reference/userinfov1) to get the user's data, and create a session for the application containing the JWTs and user data.
 
 ```python
-# your_app/auth_views.py
-from django.http import HttpRequest, HttpResponse
-from django.views.decorators.http import require_GET
-from wristband.django_auth import CallbackResultType, LogoutConfig
-from .wristband import wristband_auth
+# your_app/auth_views.py (continued)
 
 # ...
 
 @require_GET
-def callback_view(request: HttpRequest) -> HttpResponse:
+def callback_endpoint(request: HttpRequest) -> HttpResponse:
     """Process OAuth callback and create session for authenticated user"""
     callback_result = wristband_auth.callback(request)
-        
+
     # For certain edge cases, the SDK will require you to redirect back to login
-    if callback_result.type == CallbackResultType.REDIRECT_REQUIRED:
+    if isinstance(callback_result, RedirectRequiredCallbackResult):
         return wristband_auth.create_callback_response(request, callback_result.redirect_url)
-        
-    # Create session data for the authenticated user
-    callback_data = callback_result.callback_data
-    request.session['wristband'] = {
-        'access_token': callback_data.access_token,
-        'expires_at': callback_data.expires_at,
-        'refresh_token': callback_data.refresh_token,
-        'user_info': callback_data.user_info,
-        'tenant_domain_name': callback_data.tenant_domain_name,
-        'tenant_custom_domain': callback_data.tenant_custom_domain,
-    }
+
+    # The SDK provides a convenience method for storing callback data in your app's session
+    session_from_callback(request, callback_result.callback_data)
         
     # Redirect to your app
-    post_callback_url = callback_data.return_url or '/'
+    post_callback_url = callback_result.callback_data.return_url or '/'
     return wristband_auth.create_callback_response(request, post_callback_url)
 
 # ...
@@ -321,42 +403,325 @@ def callback_view(request: HttpRequest) -> HttpResponse:
 
 The goal of the Logout View/Endpoint is to destroy the application's session that was established during the Callback Endpoint execution. If refresh tokens were requested during the Login Workflow, then a call to the [Wristband Revoke Token Endpoint](https://docs.wristband.dev/reference/revokev1) will occur. It then will redirect to the [Wristband Logout Endpoint](https://docs.wristband.dev/reference/logoutv1) in order to destroy the user's authentication session within the Wristband platform. From there, Wristband will send the user to the Tenant-Level Login Page (unless configured otherwise).
 
-
 ```python
-# your_app/auth_views.py
-from django.http import HttpRequest, HttpResponse
-from django.views.decorators.http import require_GET
-from wristband.django_auth import CallbackResultType, LogoutConfig
-from .wristband import wristband_auth
+# your_app/auth_views.py (continued)
 
 # ...
 
 @require_GET
-def logout_view(request: HttpRequest) -> HttpResponse:
+def logout_endpoint(request: HttpRequest) -> HttpResponse:
     """Log out user and redirect to Wristband logout endpoint"""
-    # Get session data for logout configuration
-    wristband_session = request.session.get('wristband', {})
-        
+    # Get all the necessary session data needed to perform the logout operation.
+    logout_config = LogoutConfig(
+        refresh_token=request.session.get("refresh_token"),
+        tenant_name=request.session.get("tenant_name"),
+        tenant_custom_domain=request.session.get("tenant_custom_domain"),
+    )
+
+    # Clear the user's session in Django.
+    request.session.flush()
+
     # Wristband SDK revokes the refresh token (if provided) and creates the proper redirect response.
     # Wristband Logout requires a tenant level domain. Custom domains take precedence (if present).
-    response = wristband_auth.logout(
-        request, 
-        LogoutConfig(
-            refresh_token=wristband_session.get('refresh_token'),
-            tenant_domain_name=wristband_session.get('tenant_domain_name'),
-            tenant_custom_domain=wristband_session.get('tenant_custom_domain'),
-        )
-    )
-        
-    # Destroy the user's session
-    request.session.flush()
-    
-    return response
+    return wristband_auth.logout(request, logout_config)
 ```
 
 <br>
 
-### 5) Add Template Context Processor
+### 5) Protect Your Django Views
+
+Once your core auth views are set up, you can protect routes that require authentication. This section covers **session-based authentication protection**, which is the most common approach for Django applications.
+
+The SDK provides factory methods to create authentication protection that automatically:
+
+- ✅ **Validates authentication** - Checks session validity (`request.session.is_authenticated`)
+- ✅ **Refreshes expired tokens** - When both `request.session.refresh_token` and `request.session.expires_at` exist (with up to 3 retry attempts)
+- ✅ **Extends session expiration** - Rolling session window on each authenticated request (regardless of `SESSION_SAVE_EVERY_REQUEST` setting)
+- ✅ **Handles unauthenticated requests** - Redirects to login or returns 401 based on configuration
+
+> **💡 Multiple Auth Strategies Available**
+>
+> This guide covers session-based authentication. For JWT bearer tokens or multi-strategy authentication (combining sessions + JWTs), see the [Authentication Strategies](#authentication-strategies) section.
+
+#### Function-Based View Protection
+
+For function-based views, you first need to create an authentication decorator instance in your Wristband file using the `create_auth_decorator()` factory method:
+
+```python
+# your_app/wristband.py
+
+from django.conf import settings
+from wristband.django_auth import (
+  AuthConfig,
+  AuthStrategy,
+  UnauthenticatedBehavior,
+  WristbandAuth,
+)
+
+wristband_auth = WristbandAuth(AuthConfig(**settings.WRISTBAND_AUTH))
+
+# These decorator confifgs will enforce an authenticated session. If no session,
+# then it will redirect to the loginUrl configured in your WristbandAuth instance.
+require_session = wristband_auth.create_auth_decorator(
+    strategies=[AuthStrategy.SESSION],
+    on_unauthenticated=UnauthenticatedBehavior.REDIRECT,
+)
+
+__all__ = ['wristband_auth', 'require_session']
+```
+
+Then, apply the decorator to your views:
+
+```python
+# your_app/views.py
+
+from django.shortcuts import render
+from your_app.wristband import require_session
+
+@require_session
+def dashboard(request):
+    return render(request, 'dashboard.html')
+```
+
+#### Class-Based View Protection
+
+If using class-based views, you will need to create an authentication mixin instance in your Wristband file using the `create_auth_mixin()` factory method:
+
+```python
+# your_app/wristband.py
+
+from django.conf import settings
+from wristband.django_auth import (
+  AuthConfig,
+  AuthStrategy,
+  UnauthenticatedBehavior,
+  WristbandAuth,
+)
+
+wristband_auth = WristbandAuth(AuthConfig(**settings.WRISTBAND_AUTH))
+
+# These mixin configs will enforce an authenticated session. If no session,
+# then it will redirect to the loginUrl configured in your WristbandAuth instance.
+SessionRequiredMixin = wristband_auth.create_auth_mixin(
+    strategies=[AuthStrategy.SESSION],
+    on_unauthenticated=UnauthenticatedBehavior.REDIRECT,
+)
+
+__all__ = ['wristband_auth', 'SessionRequiredMixin']
+```
+
+Apply the mixin to your views (must be leftmost in inheritance):
+
+```python
+# your_app/views.py
+
+from django.views import View
+from your_app.wristband import SessionRequiredMixin
+
+class ProfileView(SessionRequiredMixin, View):
+    def get(self, request):
+        return render(request, 'profile.html')
+```
+
+#### Django REST Framework Protection (Optional)
+
+If you're using Django REST Framework, you can create a DRF authentication class in your Wristband file instead by using the `create_drf_session_auth()` factory function:
+
+```python
+# your_app/wristband.py
+
+from django.conf import settings
+from wristband.django_auth import (
+  AuthConfig,
+  AuthStrategy,
+  UnauthenticatedBehavior,
+  WristbandAuth,
+)
+
+wristband_auth = WristbandAuth(AuthConfig(**settings.WRISTBAND_AUTH))
+
+DrfSessionAuth = wristband_auth.create_drf_session_auth()
+
+__all__ = ['wristband_auth', 'DrfSessionAuth']
+```
+
+Then, use the authentication class with DRF's `authentication_classes` and `IsAuthenticated` permission:
+
+```python
+# your_app/views.py
+
+from rest_framework.views import APIView
+from rest_framework.permissions import IsAuthenticated
+from your_app.wristband import DrfSessionAuth
+
+class ProtectedAPIView(APIView):
+    authentication_classes = [DrfSessionAuth]
+    permission_classes = [IsAuthenticated]
+    
+    def get(self, request):
+        return Response({"message": "Hello!"})
+```
+
+> **Note:** DRF authentication classes require `djangorestframework>=3.15.0`. Install with `pip install wristband-django-auth[drf]`.
+
+<br>
+
+### 6) Add API Endpoints (API-First Apps Only)
+
+API-first applications (SPAs, mobile apps, or apps using Wristband frontend SDKs) need additional endpoints to manage client-side authentication state.
+
+#### Session View/Endpoint
+
+> [!NOTE]
+> This endpoint is required for Wristband frontend SDKs to function. For more details, see the [Wristband Session Management documentation](https://docs.wristband.dev/docs/session-management-backend-server).
+
+Wristband frontend SDKs require a Session Endpoint in your backend to verify authentication status and retrieve session metadata. Use the `get_session_response()` helper to return session data in the format expected by Wristband's frontend SDKs. The response will always include `user_id` and `tenant_id`. You can include additional data for your frontend by customizing the `metadata` parameter (optional), which requires JSON-serializable values. **The response must not be cached**.
+
+> **⚠️ Important:**
+> Make sure to protect this endpoint with authentication! Use either the `require_session` decorator or `SessionRequiredMixin` class.
+
+**Function-Based View:**
+```python
+# your_app/auth_views.py (continued)
+
+from django.http import JsonResponse
+from django.views.decorators.http import require_GET
+from wristband.django_auth import get_session_response
+from your_app.wristband import require_session
+
+# ...
+
+@require_session
+@require_GET
+def session_endpoint(request: HttpRequest) -> JsonResponse:
+    """Session endpoint for Wristband frontend SDKs"""
+    session_data = get_session_response(request, metadata={'foo': 'bar'})
+    response = JsonResponse(session_data)
+    response['Cache-Control'] = 'no-store'
+    response['Pragma'] = 'no-cache'
+    return response
+```
+
+**Class-Based View:**
+```python
+# your_app/auth_views.py (continued)
+
+from django.http import JsonResponse
+from django.views import View
+from wristband.django_auth import get_session_response
+from your_app.wristband import SessionRequiredMixin
+
+# ...
+
+class SessionEndpoint(SessionRequiredMixin, View):
+    """Session endpoint for Wristband frontend SDKs"""
+    
+    def get(self, request: HttpRequest) -> JsonResponse:
+        session_data = get_session_response(request, metadata={'foo': 'bar'})
+        response = JsonResponse(session_data)
+        response['Cache-Control'] = 'no-store'
+        response['Pragma'] = 'no-cache'
+        return response
+```
+
+The Session Endpoint returns JSON to your frontend:
+
+```json
+{
+  "tenantId": "tenant_abc123",
+  "userId": "user_xyz789",
+  "metadata": {
+    "foo": "bar"
+  }
+}
+```
+
+<br>
+
+#### Token View/Endpoint (Optional)
+
+> [!NOTE]
+> This endpoint is required when your frontend needs to make authenticated API requests directly to Wristband or other protected services. For more details, see the [Wristband documentation on using access tokens from the frontend](https://docs.wristband.dev/docs/authenticating-api-requests-with-bearer-tokens#using-access-tokens-from-the-frontend).
+>
+> If your application doesn't need frontend access to tokens (e.g., all API calls go through your backend), you can skip this endpoint.
+
+Some applications require the frontend to make direct API calls to Wristband or other protected services using the user's access token. The Token Endpoint provides a secure way for your frontend to retrieve the current access token and its expiration time without exposing it in the session cookie or browser storage.
+
+Use the `get_token_response()` helper to return token data in the format expected by Wristband's frontend SDKs. **The response must not be cached**.
+
+Create a protected token endpoint that returns the access token and expiration data. **The response must not be cached**.
+
+> **⚠️ Important:**
+> Make sure to protect this endpoint with authentication! Use the `require_session` decorator or `SessionRequiredMixin` class.
+
+**Function-Based View:**
+```python
+# your_app/auth_views.py (continued)
+
+from django.http import JsonResponse
+from django.views.decorators.http import require_GET
+from wristband.django_auth import get_token_response
+from your_app.wristband import require_session
+
+# ...
+
+@require_session
+@require_GET
+def token_view(request: HttpRequest) -> JsonResponse:
+    """Token endpoint for frontend access token retrieval"""
+    token_data = get_token_response(request)
+    response = JsonResponse(token_data)
+    response['Cache-Control'] = 'no-store'
+    response['Pragma'] = 'no-cache'
+    return response
+```
+
+**Class-Based View:**
+```python
+# your_app/auth_views.py (continued)
+
+from django.http import JsonResponse
+from django.views import View
+from wristband.django_auth import get_token_response
+from your_app.wristband import SessionRequiredMixin
+
+# ...
+
+class TokenView(SessionRequiredMixin, View):
+    """Token endpoint for frontend access token retrieval"""
+    
+    def get(self, request: HttpRequest) -> JsonResponse:
+        token_data = get_token_response(request)
+        response = JsonResponse(token_data)
+        response['Cache-Control'] = 'no-store'
+        response['Pragma'] = 'no-cache'
+        return response
+```
+
+The Token Endpoint returns JSON to your frontend:
+```json
+{
+  "accessToken": "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "expiresAt": 1735689600000
+}
+```
+
+Your frontend can then use the `accessToken` in the Authorization header when making API requests:
+```javascript
+const tokenResponse = await fetch('/api/auth/token');
+const { accessToken } = await tokenResponse.json();
+
+// Use token to call Wristband API
+const userResponse = await fetch('https://<your-wristband-app-vanity_domain>/api/v1/users/123', {
+  headers: {
+    'Authorization': `Bearer ${accessToken}`
+  }
+});
+```
+
+<br>
+
+### 7) Add Template Context Processor
 
 Django context processors allow you to make data available across all templates without manually passing it from each view. This is perfect for authenticated session data that you want to access in your templates for things like showing user information, login/logout links, and conditional content.
 
@@ -366,18 +731,45 @@ Create a context processor to make Wristband authentication data available in al
 
 ```python
 # your_app/context_processors.py
-from typing import Dict, Any
+
+from typing import Any, Dict
 from django.http import HttpRequest
 
 def wristband_auth(request: HttpRequest) -> Dict[str, Any]:
     """
-    Makes authentication data from Django sessions available to all templates
-    via the 'wristband' context variable.
+    Add Wristband auth context to templates.
+    
+    Exposes session fields directly to templates for easy access.
+    
+    Returns:
+        Context dictionary with auth data directly accessible in templates.
     """
+    if not hasattr(request, 'session'):
+        return {}
+    
+    # List of session fields to expose in templates
+    session_fields = [
+        'is_authenticated',
+        'user_id',
+        'tenant_id',
+        'tenant_name',
+        'tenant_custom_domain',
+        'identity_provider_name',
+        'email',
+        'given_name',
+        'family_name',
+        # Add other fields as needed
+    ]
+    
     return {
-        'wristband': request.session.get('wristband', {}),
+        field: request.session.get(field) 
+        for field in session_fields 
+        if request.session.get(field) is not None
     }
 ```
+
+> **⚠️ Security Note:**
+> Never expose `refresh_token` or `access_token` in template context. These tokens should never be accessible in HTML templates or client-side JavaScript. If your frontend needs the access token for API calls, use the [Token View/Endpoint](#token-viewendpoint-optional) instead, which provides secure, on-demand access.
 
 #### Register the Context Processor
 
@@ -407,13 +799,12 @@ TEMPLATES = [
 #### Using Authentication Data in Templates
 
 Now you can access authenticated session data in any template:
-
 ```html
 <!-- Check if user is authenticated -->
-{% if wristband %}
+{% if is_authenticated %}
     <div class="user-info">
-        <p>Welcome, {{ wristband.user_info.email }}!</p>
-        <p>Tenant: {{ wristband.tenant_domain_name }}</p>
+        <p>Welcome, {{ email }}!</p>
+        <p>Tenant: {{ tenant_name }}</p>
         <a href="{% url 'your_app:logout' %}">Logout</a>
     </div>
 {% else %}
@@ -421,206 +812,164 @@ Now you can access authenticated session data in any template:
 {% endif %}
 
 <!-- Access specific user data -->
-{% if wristband.user_info %}
-    <img src="{{ wristband.user_info.picture }}" alt="Profile">
-    <span>{{ wristband.user_info.given_name }} {{ wristband.user_info.family_name }}</span>
+{% if given_name %}
+    <span>{{ given_name }} {{ family_name }}</span>
 {% endif %}
 ```
 
 <br/>
 
-### 6) Protect Resources and Handle Token Refresh
-
-When it comes to protecting your Django application, you'll mark protected endpoints that require authentication and then create custom middleware that automatically:
-
-- Determines which incoming requests need authentication
-- Ensures users have valid, active sessions
-- Automatically refreshes expired access tokens to maintain seamless user experience
-- Redirects unauthenticated users or returns appropriate error responses
-
-#### Use Decorators/Mixins on Views
-
-The SDK provides flexible authentication markers to identify your protected endpoints:
-
-- `@wristband_auth_required` decorator: Apply to function-based views that need authentication
-- `WristbandAuthRequiredMixin` mixin: Inherit in class-based views to mark them as protected
-
-These markers don't handle the actual authentication logic themselves. Instead, they serve as signals to your auth middleware, telling it which routes require user validation.
-
-**Function-Based Protected Views:**
-```python
-# your_app/protected_views.py
-from django.http import HttpRequest, HttpResponse
-from django.shortcuts import render
-from django.views.decorators.http import require_GET
-from wristband.django_auth import wristband_auth_required
-
-@wristband_auth_required
-@require_GET
-def hello_world(request: HttpRequest) -> HttpResponse:
-    """ Requires auth """
-    return render(request, "your_app/hello_world.html")
-```
-
-**Class-based Protected Views:**
-```python
-# your_app/protected_views.py
-from django.http import HttpRequest, HttpResponse
-from django.shortcuts import render
-from django.views import View
-from wristband.django_auth import WristbandAuthRequiredMixin
-
-class HelloWorld(WristbandAuthRequiredMixin, View):
-    """ Requires auth """
-    def get(self, request: HttpRequest) -> HttpResponse:
-        return render(request, "your_app/hello_world.html")
-```
-
-#### Create the Authentication Middleware
-
-Create authentication middleware to protect your application views/endpoints and handle automatic token refresh. This middleware acts as a security gateway, validating user sessions on protected routes and seamlessly managing token lifecycle to keep users authenticated.
-
-The middleware will leverage two key Wristband SDK functions:
-
-- `is_wristband_auth_required(request)`: Determines if the incoming request targets a protected endpoint
-- `refresh_token_if_expired(refresh_token, expires_at)`: Automatically refreshes expired tokens with built-in retry logic and returns updated JWTs
+### 8) Pass Your Access Token to APIs
 
 > [!NOTE]
-> There may be applications that do not want to utilize access tokens and/or refresh tokens. If that applies to your application, then you can ignore using the `refresh_token_if_expired()` functionality.
-
-```python
-# your_app/auth_middleware.py
-from typing import Optional
-from django.http import HttpRequest, HttpResponse, JsonResponse
-from django.utils.deprecation import MiddlewareMixin
-from django.shortcuts import redirect
-from wristband.django_auth import is_wristband_auth_required
-from .wristband import wristband_auth
-
-
-class AuthMiddleware(MiddlewareMixin):
-    """
-    Authentication middleware that protects routes and handles token refresh.
-    """
-    def process_request(self, request: HttpRequest) -> Optional[HttpResponse]:
-        # Skip authentication for public paths
-        if not is_wristband_auth_required(request):
-            return None
-
-        # Validate the user's authenticated session
-        wristband_session = request.session.get('wristband')
-        if not wristband_session:
-            return self._auth_failure_response(request)
-
-        try:
-            # Check if token is expired and refresh if necessary
-            refresh_token = wristband_session.get('refresh_token')
-            expires_at = wristband_session.get('expires_at', 0)
-            new_token_data = wristband_auth.refresh_token_if_expired(refresh_token, expires_at)
-
-            # Update session with new token data only if a refresh occured
-            if new_token_data:
-                wristband_session.update({
-                    'access_token': new_token_data.access_token,
-                    'refresh_token': new_token_data.refresh_token,
-                    'expires_at': new_token_data.expires_at,
-                })
-                request.session['wristband'] = wristband_session
-
-        except Exception as e:
-            return self._auth_failure_response(request)
-
-        return None
-
-    def _auth_failure_response(self, request: HttpRequest) -> HttpResponse:
-        # Clear invalid session
-        request.session.flush()
-        
-        # You can return a JSON response for pure AJAX/API requests
-        if request.path.startswith('/api/'):
-            return JsonResponse({'error': 'Authentication required'}, status=401)
-
-        # Otherwise, redirect to your Login Endpoint for page/template requests
-        return redirect('/auth/login/')
-```
-
-#### Register the Auth Middleware
-
-Lastly, add your authentication middleware to your Django settings. <ins>Place it AFTER SessionMiddleware but before any middleware that depends on authentication:</ins>
-
-```python
-# your_project/settings.py
-
-# ...
-
-MIDDLEWARE = [
-    'django.middleware.security.SecurityMiddleware',
-    'django.contrib.sessions.middleware.SessionMiddleware',  # <-- Must come before auth
-    'django.middleware.common.CommonMiddleware',
-    'your_app.middleware.AuthMiddleware',  # <-- Add your auth middleware here
-    # your other middlewares ...
-]
-```
-
-The middleware will now protect all your protected routes!
-
-<br>
-
-### 7) Pass Your Access Token to Downstream APIs
-
-> [!NOTE]
-> This is only applicable if you wish to call Wristband's APIs directly or protect your application's other downstream backend APIs.
+> This section is only applicable if you need to call Wristband APIs or protect your own backend services with Wristband tokens.
 
 If you intend to utilize Wristband APIs within your application or secure any backend APIs or downstream services using the access token provided by Wristband, you must include this token in the `Authorization` HTTP request header.
 
-```
+```bash
 Authorization: Bearer <access_token_value>
 ```
 
-For example, you would pass the access token from your Django session into the `Authorization` header of an API request as follows:
+The access token is available in different ways depending on your authentication strategy.
 
+#### Session-Based Authentication
+
+When using session-based authentication, the access token is stored in the session and accessible via `request.session`:
+
+**Function-Based View:**
 ```python
-# your_app/app_views.py
+# your_app/views.py
+
 import requests
-from django.http import HttpRequest, JsonResponse
+from django.http import JsonResponse
+from django.views.decorators.http import require_POST
+from your_app.wristband import require_session
+
+@require_session
+@require_POST
+def create_order(request):
+    try:
+        order_data = json.loads(request.body)
+        db.save(order_data)
+        
+        requests.post(
+            "https://api.example.com/email-receipt",
+            json=order_data,
+            headers={
+                # Pass your access token to downstream API
+                "Authorization": f"Bearer {request.session['access_token']}"
+            }
+        )
+        
+        return JsonResponse({"status": "created"})
+    except Exception:
+        return JsonResponse({"error": "Failed"}, status=500)
+```
+
+**Class-Based View:**
+```python
+# your_app/views.py
+import json
+import requests
+from django.http import JsonResponse
 from django.views import View
-from django.utils.decorators import method_decorator
-from wristband.django_auth import WristbandAuthRequiredMixin
+from your_app.wristband import SessionRequiredMixin
 
-
-class UpdateNickname(WristbandAuthRequiredMixin, View):
-    """Update user nickname via Wristband API"""
-
-    def post(self, request: HttpRequest) -> JsonResponse:
+class CreateOrderView(SessionRequiredMixin, View):
+    def post(self, request):
         try:
-            # Auth middleware ensures this exists
-            wristband_session = request.session.get('wristband', {})
-            user_info = wristband_session.get('user_info', {})
-
-            # Wristband Update User API - https://docs.wristband.dev/reference/patchuserv1
-            response = requests.patch(
-                f'https://<your-wristband-app-vanity-domain>/api/v1/users/{user_info.get('sub')}',
+            order_data = json.loads(request.body)
+            db.save(order_data)
+            
+            # Pass your access token to downstream API
+            requests.post(
+                "https://api.example.com/email-receipt",
+                json=order_data,
                 headers={
-                    'Accept': 'application/json',
-                    'Content-Type': 'application/json',
-                    'Authorization': f'Bearer {wristband_session.get('access_token')}'
-                },
-                json={'nickname': 'Satoshi Nakamoto'},
+                    "Authorization": f"Bearer {request.session['access_token']}"
+                }
             )
             
-            response.raise_for_status()
-            
-            return JsonResponse({'success': True}, status=200)
-                
-        except requests.exceptions.RequestException as e:
-            return JsonResponse({'error': f'API request failed: {str(e)}'}, status=500)
-        except Exception as e:
-            return JsonResponse({'error': 'Internal server error'}, status=500)
+            return JsonResponse({"status": "created"})
+        except Exception:
+            return JsonResponse({"error": "Failed"}, status=500)
 ```
+
+#### JWT Bearer Token Authentication
+
+When using JWT authentication, both the raw JWT string and the decoded JWT payload are available via `request.auth`.
+
+> **💡 JWT Authentication**
+>
+> For more on JWT authentication, see the [Authentication Strategies](#authentication-strategies) section.
+
+**Function-Based View:**
+```python
+# your_app/views.py
+
+import requests
+from django.http import JsonResponse
+from django.views.decorators.http import require_POST
+from your_app.wristband import require_jwt
+
+@require_jwt
+@require_POST
+def create_order(request):
+    try:
+        order_data = json.loads(request.body)
+        db.save(order_data)
+        
+        requests.post(
+            "https://api.example.com/email-receipt",
+            json=order_data,
+            headers={
+                # Pass your access token to downstream API
+                "Authorization": f"Bearer {request.auth.jwt}"
+            }
+        )
+        
+        return JsonResponse({"status": "created"})
+    except Exception:
+        return JsonResponse({"error": "Failed"}, status=500)
+```
+
+**Class-Based View:**
+```python
+# your_app/views.py
+
+import json
+import requests
+from django.http import JsonResponse
+from django.views import View
+from your_app.wristband import JwtRequiredMixin
+
+class CreateOrderView(JwtRequiredMixin, View):
+    def post(self, request):
+        try:
+            order_data = json.loads(request.body)
+            db.save(order_data)
+            
+            requests.post(
+                "https://api.example.com/email-receipt",
+                json=order_data,
+                headers={
+                    # Pass your access token to downstream API
+                    "Authorization": f"Bearer {request.auth.jwt}"
+                }
+            )
+            
+            return JsonResponse({"status": "created"})
+        except Exception:
+            return JsonResponse({"error": "Failed"}, status=500)
+```
+
+#### Using Access Tokens from the Frontend
+
+For scenarios where your frontend needs to make direct API calls with the user's access token, use the [Token Endpoint](#token-viewendpoint-optional) to securely retrieve the current access token.
 
 <br>
 
-### 8) Configure CSRF Protection
+### 9) Configure CSRF Protection
 
 Cross Site Request Forgery (CSRF) is a security vulnerability where attackers trick authenticated users into unknowingly submitting malicious requests to your application. Django's CSRF protection follows the Synchronizer Token Pattern, which generates a unique tokens for a session, stores them in the session, and validates submitted requests by comparing the submitted token with the session-stored token. This provides robust protection against CSRF attacks.
 
@@ -630,9 +979,6 @@ Refer to the [OWASP CSRF Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsh
 
 Enable CsrfViewMiddleware in your Django settings, and <ins>ensure it comes after SessionMiddleware but before AuthMiddleware</ins>. This ensures CSRF tokens are properly validated and synchronized with user sessions during the authentication process.
 
-> [!NOTE]
-> If you use Safari browser When developing and testing on `localhost`, you may need to set `CSRF_COOKIE_SECURE = False`. Remember to set the value back to `True` for Production!
-
 ```python
 # your_project/settings.py
 
@@ -640,56 +986,77 @@ MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
-    
     'django.middleware.csrf.CsrfViewMiddleware',  # <-- CSRF middleware
-    
-    'your_app.middleware.AuthMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
-]
 
-CSRF_COOKIE_AGE = 3600  # 1 hour (ensure this is the same as SESSION_COOKIE_AGE)
-CSRF_COOKIE_SECURE = True # Set to True in Production!
+    ### ...your other middlewares...
+]
 ```
+
+Your CSRF configuration depends on whether your application uses traditional form submissions or AJAX/SPA interactions.
+
+> [!NOTE]
+> If you use Safari browser When developing and testing on `localhost`, you may need to set `CSRF_COOKIE_SECURE = False`. Remember to set the value back to `True` for Production!
+
+**Template-Based Applications (Form Submissions):**
+```python
+# your_project/settings.py
+
+# Store CSRF token in session (recommended for traditional form posts)
+CSRF_USE_SESSIONS = True
+CSRF_COOKIE_AGE = 3600  # 1 hour (match to SESSION_COOKIE_AGE)
+CSRF_COOKIE_SECURE = True  # IMPORTANT: Set to True in Production!
+```
+
+**AJAX/SPA Applications**
+
+If your application makes AJAX requests - whether from Django templates or a separate SPA frontend - you need to allow JavaScript to read the CSRF token from a cookie.
+
+```python
+# your_project/settings.py
+
+# Use cookie-based CSRF tokens for AJAX/SPA apps
+CSRF_USE_SESSIONS = False  # Token stored in cookie instead of session
+CSRF_COOKIE_AGE = 3600  # 1 hour (match to SESSION_COOKIE_AGE)
+CSRF_COOKIE_SECURE = True  # IMPORTANT: Set to True in Production!
+```
+
+This enables the **double-submit cookie pattern**: JavaScript reads the token from the cookie and sends it in the `X-CSRFToken` header. Django validates that the header matches the cookie value.
 
 #### Generate CSRF Token in Callback Endpoint
 
-Call `get_token()` in your Callback View to generate the CSRF token and set the CSRF cookie. This ensures authenticated users receive a valid CSRF token immediately after login, enabling secure form submissions and API calls throughout their session.
+Call Django's `get_token()` function in your Callback Endpoint to generate a CSRF token for your session and set the CSRF cookie. This ensures authenticated users receive a valid CSRF token immediately after login, enabling secure form submissions and API calls throughout their session.
 
 ```python
 # your_app/auth_views.py
+
 from django.middleware.csrf import get_token
 
 # ...
 
-class Callback(View):
-    def get(self, request: HttpRequest) -> HttpResponse:
-        # ... existing callback logic ...
-        
-        # This creates the csrftoken cookie and stores the token in the Django session.
-        get_token(request) # <-- Add this!
-        
-        post_callback_url = callback_data.return_url or '/'
-        return wristband_auth.create_callback_response(request, post_callback_url)
+@require_GET
+def callback_endpoint(request: HttpRequest) -> HttpResponse:
+    """Process OAuth callback and create session for authenticated user"""
+    callback_result = wristband_auth.callback(request)
+
+    if isinstance(callback_result, RedirectRequiredCallbackResult):
+        return wristband_auth.create_callback_response(request, callback_result.redirect_url)
+
+    session_from_callback(request, callback_result.callback_data)
+    
+    # Generate CSRF token and cookie
+    get_token(request)  # <-- Add this!
+    
+    post_callback_url = callback_result.callback_data.return_url or '/'
+    return wristband_auth.create_callback_response(request, post_callback_url)
 ```
 
-#### Refresh CSRF Token in Auth Middleware
+#### Automatic CSRF Token Refresh
 
-Update your auth middleware to call `getToken()` to refresh the CSRF token on each request to keep it synchronized with the session: This maintains rolling expiration for both session and CSRF cookies, ensuring they expire together and preventing authentication issues when users remain active beyond the initial timeout period.
+When you use the session-based authentication decorator (`require_session`) or mixin (`SessionRequiredMixin`) created in [Step 5](#5-protect-your-django-views), CSRF tokens are automatically refreshed on each authenticated request. This maintains rolling expiration for both session and CSRF cookies, ensuring they expire together.
 
-```python
-# your_app/middleware.py
-from django.middleware.csrf import get_token
-
-class AuthMiddleware(MiddlewareMixin):
-    def process_request(self, request: HttpRequest) -> Optional[HttpResponse]:
-        # ... existing auth logic ...
-        
-        # Update CSRF cookie expiration to match session
-        get_token(request) # <-- Add this!
-        
-        return None
-```
+No additional code is needed, as the decorator and mixin handle this automatically when Django's `CsrfViewMiddleware` is enabled.
 
 #### Clear CSRF Cookie on Logout
 
@@ -698,18 +1065,22 @@ Remove the CSRF token cookie when users log out. This prevents stale CSRF tokens
 ```python
 # your_app/auth_views.py
 
-# ...
+@require_GET
+def logout_endpoint(request: HttpRequest) -> HttpResponse:
+    """Log out user and redirect to Wristband logout endpoint"""
+    logout_config = LogoutConfig(
+        refresh_token=request.session.get("refresh_token"),
+        tenant_name=request.session.get("tenant_name"),
+        tenant_custom_domain=request.session.get("tenant_custom_domain"),
+    )
 
-class Logout(View):
-    def get(self, request: HttpRequest) -> HttpResponse:
-        # ... existing logout logic ...
-        
-        request.session.flush()
-        
-        # Clear CSRF token cookie
-        response.delete_cookie('csrftoken') # <-- Add this!
-        
-        return response
+    request.session.flush()
+    response = wristband_auth.logout(request, logout_config)
+    
+    # Clear CSRF token cookie
+    response.delete_cookie('csrftoken')  # <-- Add this!
+    
+    return response
 ```
 
 #### Using CSRF Tokens in Templates
@@ -749,7 +1120,7 @@ fetch('/api/update/', {
     method: 'POST',
     headers: {
         'Content-Type': 'application/json',
-        'X-CSRFToken': getCookie('csrftoken'), // <-
+        'X-CSRFToken': getCookie('csrftoken'), // <-- Add CSRF token header
     },
     mode: 'same-origin',
     body: JSON.stringify({ data: 'your data' })
@@ -759,16 +1130,16 @@ fetch('/api/update/', {
 This setup ensures your Wristband-authenticated sessions are protected against CSRF attacks while integrating seamlessly with Django's security framework.
 
 > [!NOTE]
-> For complete CSRF configuration options, advanced AJAX patterns, edge cases, and troubleshooting, see Django's CSRF protection documentation.
+> For complete CSRF configuration options, advanced AJAX patterns, edge cases, and troubleshooting, see Django's [CSRF documentation](https://docs.djangoproject.com/en/6.0/ref/csrf/).
 
 <br/>
 
-## Hybrid Authentication with Django's Built-in Auth System
+## Integration with Django's Built-in Auth System
 
 > [!NOTE]
-> **OPTIONAL:** This section is optional. The Wristband SDK works perfectly on its own without Django's built-in authentication system. Only implement this hybrid approach if your application needs Django User objects, groups, permissions, or admin interface integration.
+> **OPTIONAL:** This section is optional. The Wristband SDK works perfectly on its own without Django's built-in authentication system. Only implement this approach if your application needs Django User objects, groups, permissions, or admin interface integration.
 
-Many Django applications benefit from combining Wristband's multi-tenant authentication with Django's built-in user management system. This hybrid approach lets you leverage Wristband for secure, scalable authentication while using Django's familiar User model, groups, permissions, and admin interface for application-specific user management.
+Many Django applications benefit from combining Wristband's multi-tenant authentication with Django's built-in user management system. This lets you leverage Wristband for secure, scalable authentication while using Django's familiar User model, groups, permissions, and admin interface for application-specific user management.
 
 This integration pattern is particularly valuable when you need to:
 
@@ -778,9 +1149,9 @@ This integration pattern is particularly valuable when you need to:
 - Integrate with existing Django packages that expect Django User objects
 - Maintain user data locally for performance or offline scenarios
 
-The hybrid approach synchronizes Wristband user data with Django's User model during your Callback View, creating a seamless bridge between external identity management and internal application logic.
+This approach synchronizes Wristband user data with Django's User model during your Callback Endpoint, creating a seamless bridge between external identity management and internal application logic.
 
-To implement hybrid authentication, you'll need to handle the following steps.
+To do this, you'll need to handle the following steps.
 
 <br>
 
@@ -798,13 +1169,23 @@ INSTALLED_APPS = [
     # ... other apps
 ]
 
+# Configure Wristband as the authentication backend
+AUTHENTICATION_BACKENDS = [
+    'wristband.django_auth.WristbandAuthBackend',  # <-- ADD: Wristband authentication backend
+]
+
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
-    "django.contrib.auth.middleware.AuthenticationMiddleware",  # <-- ADD: Links request.user to Django User objects
-    'your_app.middleware.AuthMiddleware',
+
+    # ADD: Populates request.user with Django User objects
+    "django.contrib.auth.middleware.AuthenticationMiddleware",
+
+    'django.contrib.messages.middleware.MessageMiddleware',
+    'django.middleware.clickjacking.XFrameOptionsMiddleware',
+
     # your other middlewares ...
 ]
 
@@ -822,6 +1203,14 @@ TEMPLATES = [
         },
     },
 ]
+
+# Database configuration required for storing Django User objects
+DATABASES = {
+    'default': {
+        'ENGINE': 'django.db.backends.sqlite3',
+        'NAME': BASE_DIR / 'db.sqlite3',
+    }
+}
 ```
 
 You'll need to **run database migrations** to create the necessary database tables for Django's User model, groups, and permissions system. For example:
@@ -832,237 +1221,212 @@ python manage.py migrate
 
 <br>
 
-### Sync Wristband Users to Django User Model and Groups
+### Sync Wristband Users to Django User Model
 
-Modify your Callback View to create and sync Django User objects with Wristband user data. This bridges Wristband authentication with Django's user management system, enabling you to use Django's permissions, groups, and admin interface.
+Modify your Callback Endpoint to authenticate and sync Django User objects with Wristband user data. The `WristbandAuthBackend` automatically creates or updates Django Users based on Wristband authentication data.
 
 ```python
 # your_app/auth_views.py
-from django.contrib.auth import login
-from django.contrib.auth.models import User, Group
+
+from django.contrib.auth import authenticate, login
 from django.http import HttpRequest, HttpResponse
+from django.middleware.csrf import get_token
 from django.views.decorators.http import require_GET
-from wristband.django_auth import CallbackResultType, LogoutConfig
+from wristband.django_auth import RedirectRequiredCallbackResult, session_from_callback
 from .wristband import wristband_auth
 
 # ...
 
 @require_GET
-def callback_view(request: HttpRequest) -> HttpResponse:
+def callback_endpoint(request: HttpRequest) -> HttpResponse:
+    """Process OAuth callback and sync with Django User"""
     callback_result = wristband_auth.callback(request)
 
-    if callback_result.type == CallbackResultType.REDIRECT_REQUIRED:
-        redirect_url = callback_result.redirect_url
-        return wristband_auth.create_callback_response(request, redirect_url)
+    if isinstance(callback_result, RedirectRequiredCallbackResult):
+        return wristband_auth.create_callback_response(request, callback_result.redirect_url)
 
-    callback_data = callback_result.callback_data
-    request.session["wristband"] = {
-        "user_info": callback_data.user_info,
-        "access_token": callback_data.access_token,
-        "refresh_token": callback_data.refresh_token,
-        "expires_at": callback_data.expires_at,
-        "tenant_domain_name": callback_data.tenant_domain_name,
-        "tenant_custom_domain": callback_data.tenant_custom_domain,
-    }
+    session_from_callback(request, callback_result.callback_data)
 
-    # Sync Wristband user and log them in to Django's auth system
-    _sync_and_login_django_user(request, callback_data.user_info)  # <-- ADD THIS
+    # ADD: Authenticate and sync Wristband user with Django User model
+    user = authenticate(request=request, callback_data=callback_result.callback_data)
+    login(request, user)
 
     get_token(request)
-    post_callback_url = callback_data.return_url or "/"
+    post_callback_url = callback_result.callback_data.return_url or "/"
     return wristband_auth.create_callback_response(request, post_callback_url)
-
-
-def _sync_and_login_django_user(request: HttpRequest, user_info):
-    """ Create or update Django User from Wristband user data and map roles to groups. """
-    email = user_info.get('email')
-    first_name = user_info.get('given_name') or 'First Name'
-    last_name = user_info.get('family_name') or 'Last Name'
-    user_id = user_info.get('sub')
-
-    # Use Wristband user ID as username since emails can change
-    user, created = User.objects.get_or_create(
-        username=user_id,
-        defaults={
-            'email': email,
-            'first_name': first_name,
-            'last_name': last_name,
-            'is_active': True,
-        }
-    )
-    
-    # Always sync fields for existing users
-    if not created:
-        user.email = email
-        user.first_name = first_name
-        user.last_name = last_name
-
-    # NOTE: The role names "Viewers" and "Owners" are examples. 
-    # Customize these group names and role-matching logic based on your requirements.
-    user.groups.clear()
-    user.is_staff = False
-    user.is_superuser = False
-    viewer_group, _ = Group.objects.get_or_create(name='Viewers')
-    user.groups.add(viewer_group)
-
-    # Map Wristband roles to Django groups and permissions.
-    roles = user_info.get('roles', [])
-    if roles:
-        role_names = [role['name'] for role in roles]
-        has_owner_role = any(
-            role_name.startswith('app:') and role_name.endswith(':owner')
-            for role_name in role_names
-        )
-
-        # Upgrade owners to admin permissions and Owners group.
-        if has_owner_role:
-            user.groups.clear()
-            user.is_staff = True
-            user.is_superuser = True
-            owner_group, _ = Group.objects.get_or_create(name='Owners')
-            user.groups.add(owner_group)
-
-    # Save user and log into Django auth system
-    user.save()
-    login(request, user)
-    return user
-```
-
-Make sure you configure the required scopes for the SDK to ensure user profile and role data is available for synchronization:
-
-```python
-# your_app/wristband.py
-from django.conf import settings
-from wristband.django_auth import AuthConfig, WristbandAuth
-
-def _create_wristband_auth() -> WristbandAuth:
-    wristband_settings = settings.WRISTBAND_AUTH
-    
-    auth_config = AuthConfig(
-        client_id=wristband_settings['client_id'],
-        client_secret=wristband_settings['client_secret'],
-        wristband_application_vanity_domain=wristband_settings['wristband_application_vanity_domain'],
-        scopes=["openid", "offline_access", "email", "profile", "roles"],  # <-- Include profile and roles
-    )
-    return WristbandAuth(auth_config)
-```
-
-### Update Your Authentication Middleware
-
-With Django's authentication system enabled, update your middleware to work seamlessly with Django's `request.user` object while maintaining Wristband session validation and token refresh:
-
-```python
-# your_app/auth_middleware.py
-from typing import Optional
-from django.contrib.auth import logout
-from django.http import HttpRequest, HttpResponse, JsonResponse
-from django.middleware.csrf import get_token
-from django.shortcuts import redirect
-from django.utils.deprecation import MiddlewareMixin
-from wristband.django_auth import is_wristband_auth_required
-from .wristband import wristband_auth
-
-
-class AuthMiddleware(MiddlewareMixin):
-    def process_request(self, request: HttpRequest) -> Optional[HttpResponse]:
-        if not is_wristband_auth_required(request):
-            return None
-
-        # vvv ADD: Validate both Wristband session and Django authentication vvv
-        wristband_data = request.session.get("wristband")
-        if not request.user.is_authenticated or not wristband_data:
-            return self._auth_failure_response(request)
-
-        try:
-            refresh_token = wristband_data.get("refresh_token")
-            expires_at = wristband_data.get("expires_at", 0)
-            new_token_data = wristband_auth.refresh_token_if_expired(refresh_token, expires_at)
-
-            if new_token_data:
-                wristband_data.update({
-                    "access_token": new_token_data.access_token,
-                    "refresh_token": new_token_data.refresh_token,
-                    "id_token": new_token_data.id_token,
-                    "expires_at": new_token_data.expires_at,
-                })
-                request.session["wristband"] = wristband_data
-
-            get_token(request)
-
-        except Exception as e:
-            return self._auth_failure_response(request)
-
-        return None
-
-    def _auth_failure_response(self, request: HttpRequest) -> HttpResponse:
-        request.session.flush()
-
-        logout(request)  # <-- ADD: Log user out of Django auth system
-
-        if request.path.startswith("/api/"):
-            return JsonResponse({"error": "Authentication failed"}, status=401)
-
-        return redirect("/auth/login")
 ```
 
 <br>
 
-### Access Django Admin Through Wristband Authentication
+### How the Authentication Backend Works
 
-Instead of maintaining separate admin credentials, you can configure Django's admin interface to use Wristband authentication, allowing users with appropriate permissions to access admin functionality seamlessly.
+The `WristbandAuthBackend` automatically synchronizes Wristband users with Django's User model during the login flow. When a user successfully authenticates through Wristband, the backend:
 
-This configuration provides:
+1. **Creates or retrieves** a Django User based on the Wristband user ID
+2. **Populates User fields** (email, name, etc.) from Wristband data, if available
+3. **Returns the User** for Django's login() to establish a session
 
-- Unified authentication: Admin access uses the same Wristband login flow as your application
-- Permission-based access: Only users with `is_staff=True` (owners in your role mapping) can access admin
-- Seamless experience: Users with admin permissions are automatically redirected to admin after login
-- No duplicate credentials: Eliminates the need to manage separate Django superuser accounts
+The backend uses an **adapter pattern** to control how Wristband data maps to Django User fields. This separation allows you to customize user synchronization logic without modifying the authentication flow.
+
+#### Default Adapter
+
+By default, the backend uses `DefaultWristbandAuthBackendAdapter`, which performs basic field mapping based on the `callback_data` that Wristband returns to your Callback Endpoint:
 
 ```python
-# your_app/admin.py
-from django.contrib import admin
-from django.contrib.auth.models import User, Group
-from django.contrib.sessions.models import Session
-from django.shortcuts import redirect
-from urllib.parse import urlencode
-
-
-class WristbandAdminSite(admin.AdminSite):
-    """Custom admin site that uses Wristband authentication instead of Django's login form."""
-    
-    site_header = "Your App Admin"
-    site_title = "Admin Portal"
-    
-    def login(self, request, extra_context=None):
-        """Redirect to Wristband login instead of showing Django's admin login form."""
-        # Build return URL to redirect back to admin after authentication
-        return_url = request.build_absolute_uri('/admin/')
-        login_url = f'/auth/login/?return_url={return_url}'
-        return redirect(login_url)
-
-
-# Create custom admin site instance
-wristband_admin_site = WristbandAdminSite(name='wristband_admin')
-
-# Register models with the custom admin site
-wristband_admin_site.register(User)
-wristband_admin_site.register(Group)
-wristband_admin_site.register(Session)
+# Default behavior (no configuration needed)
+user.username = callback_data.user_info.user_id       # Immutable Wristband user ID
+user.email = callback_data.user_info.email            # Requires 'email' scope
+user.first_name = callback_data.user_info.given_name  # Requires 'profile' scope
+user.last_name = callback_data.user_info.family_name  # Requires 'profile' scope
 ```
 
-After creating the custom admin site, make sure to update your URL configuration to use it:
+#### Custom Adapter for Role Mapping
+
+To map Wristband roles to Django groups and permissions, create a custom adapter that subclasses `DefaultWristbandAuthBackendAdapter`. For example:
 
 ```python
-# your_project/urls.py
-from django.urls import path, include
-from your_app.admin import wristband_admin_site
+# your_app/adapters.py
 
-urlpatterns = [
-    # Replace default admin with Wristband-authenticated admin
-    path('admin/', wristband_admin_site.urls),
-    # Your other URLs
-    path('', include('your_app.urls')),
-]
+from django.contrib.auth.models import Group
+from wristband.django_auth import DefaultWristbandAuthBackendAdapter
+
+
+class MyWristbandAdapter(DefaultWristbandAuthBackendAdapter):
+    """Custom adapter with role mapping logic."""
+
+    def populate_user(self, user, callback_data, **kwargs):
+        # Populate basic fields from parent
+        user = super().populate_user(user, callback_data, **kwargs)
+
+        # Add custom role mapping (requires 'roles' scope)
+        user_info = callback_data.user_info
+        roles = user_info.roles
+
+        if not roles:
+            # No roles assigned - default to viewer permissions
+            user.groups.clear()
+            user.is_staff = False
+            user.is_superuser = False
+            viewer_group, _ = Group.objects.get_or_create(name="Viewers")
+            user.groups.add(viewer_group)
+        else:
+            # Check for owner role
+            role_names = [role.name for role in roles]
+            has_owner_role = any(
+                role_name.startswith("app:") and role_name.endswith(":owner")
+                for role_name in role_names
+            )
+
+            if has_owner_role:
+                user.groups.clear()
+                user.is_staff = True
+                user.is_superuser = True
+                owner_group, _ = Group.objects.get_or_create(name="Owners")
+                user.groups.add(owner_group)
+            else:
+                user.groups.clear()
+                user.is_staff = False
+                user.is_superuser = False
+                viewer_group, _ = Group.objects.get_or_create(name="Viewers")
+                user.groups.add(viewer_group)
+
+        return user
+```
+
+> **Note:** Role mapping requires the `roles` scope. Make sure your Wristband configuration includes it:
+>
+> ```python
+> WRISTBAND_AUTH = {
+>    # ... other settings
+>    "scopes": ["openid", "offline_access", "email", "profile", "roles"],
+> }
+> ```
+
+To utilize your custom adapter, configure it in your Django settings:
+
+```python
+# your_project/settings.py
+
+# Custom adapter for role mapping (optional)
+WRISTBAND_AUTH_BACKEND_ADAPTER = 'your_app.adapters.MyWristbandAdapter'
+```
+
+#### Passing Custom Data to Adapters
+
+You can pass additional data to your adapter from the callback view via `**kwargs`:
+
+```python
+# In your callback view:
+user = authenticate(
+    request=request,
+    callback_data=callback_result.callback_data,
+    subscription_tier='premium',
+    external_flags={'beta_access': True}
+)
+
+# Your adapter receives it via **kwargs
+class MyWristbandAdapter(DefaultWristbandAuthBackendAdapter):
+    def populate_user(self, user, callback_data, **kwargs):
+        user = super().populate_user(user, callback_data, **kwargs)
+        
+        # Access custom kwargs
+        tier = kwargs.get('subscription_tier')
+        if tier == 'premium':
+            user.is_staff = True
+        
+        flags = kwargs.get('external_flags', {})
+        if flags.get('beta_access'):
+            # Grant beta permissions
+            beta_group, _ = Group.objects.get_or_create(name='Beta Users')
+            user.groups.add(beta_group)
+        
+        return user
+```
+
+<br>
+
+### Using Django's Built-in View Protection (Optional)
+
+Once Django User integration is enabled, you can optionally use Django's built-in `@login_required` decorator and `LoginRequiredMixin` for simple authentication checks in template-based views. However, **these should only be used for basic session validation** as they don't handle token refresh or validation.
+
+> **⚠️ Recommendation**
+>
+> For most use cases, **prefer Wristband's authentication decorators and mixins** from [Step 5](#5-protect-your-django-views). They provide:
+> - Automatic token refresh
+> - Session expiration extension
+> - Proper redirect handling
+>
+> Only use Django's built-in protection for simple template views where token management isn't required.
+
+**Configure Login URL:**
+
+Django's authentication decorators and mixins redirect unauthenticated users to `settings.LOGIN_URL`. Point this to your Login Endpoint:
+
+```python
+# your_project/settings.py
+
+LOGIN_URL = '/auth/login/'  # Your Wristband login endpoint
+```
+
+**Function-Based Views:**
+```python
+from django.contrib.auth.decorators import login_required
+from django.shortcuts import render
+
+@login_required
+def simple_profile(request):
+    """Basic profile view - no API calls, just templates"""
+    return render(request, 'profile.html')
+```
+
+**Class-Based Views:**
+```python
+from django.contrib.auth.mixins import LoginRequiredMixin
+from django.views.generic import TemplateView
+
+class SimpleProfileView(LoginRequiredMixin, TemplateView):
+    """Basic profile view - no API calls, just templates"""
+    template_name = 'profile.html'
 ```
 
 <br>
@@ -1073,6 +1437,7 @@ When users log out, ensure you clear both Wristband and Django authentication se
 
 ```python
 # your_app/auth_views.py
+
 from django.contrib.auth import logout
 from django.http import HttpRequest, HttpResponse
 from django.views.decorators.http import require_GET
@@ -1082,29 +1447,59 @@ from .wristband import wristband_auth
 # ...
 
 @require_GET
-def logout_view(request: HttpRequest) -> HttpResponse:
-    """ Log out the user and redirect to the Wristband Logout Endpoint. """
-    wristband_session = request.session.get('wristband', {})
-        
-    response = wristband_auth.logout(
-        request, 
-        LogoutConfig(
-            refresh_token=wristband_session.get('refresh_token'),
-            tenant_domain_name=wristband_session.get('tenant_domain_name'),
-            tenant_custom_domain=wristband_session.get('tenant_custom_domain'),
-        )
+def logout_endpoint(request: HttpRequest) -> HttpResponse:
+    """Log out user and redirect to Wristband logout endpoint"""
+    logout_config = LogoutConfig(
+        refresh_token=request.session.get("refresh_token"),
+        tenant_name=request.session.get("tenant_name"),
+        tenant_custom_domain=request.session.get("tenant_custom_domain"),
     )
-
-    logout(request)  # <-- ADD: Log user out of Django's auth system
-        
     request.session.flush()
-    response.delete_cookie("csrftoken")
+
+    # Log user out of Django's auth system
+    logout(request)  # <-- ADD THIS
+
+    response = wristband_auth.logout(request, logout_config)
+    response.delete_cookie('csrftoken')
     return response
 ```
 
 <br>
 
-## Wristband Auth Configuration Options
+### Access Django Admin Through Wristband Authentication
+
+Instead of maintaining separate admin credentials, configure Django's admin interface to use Wristband authentication by redirecting admin login/logout to your Wristband endpoints.
+
+Add these redirects to your URL configuration:
+
+```python
+# your_project/urls.py
+
+from django.contrib import admin
+from django.shortcuts import redirect
+from django.urls import path, include
+
+def admin_login_redirect(request):
+    """Redirect admin login to Wristband"""
+    return_url = request.build_absolute_uri('/admin/')
+    return redirect(f'/auth/login') # <-- Your Wristband Login Endpoint
+
+def admin_logout_redirect(request):
+    """Redirect admin logout to Wristband"""
+    return_url = request.build_absolute_uri('/admin/')
+    return redirect('/auth/logout') # <-- Your Wristband Logout Endpoint
+
+urlpatterns = [
+    path('admin/login/', admin_login_redirect),   # <-- ADD: Redirect admin login
+    path('admin/logout/', admin_logout_redirect), # <-- ADD: Redirect admin logout
+    path('admin/', admin.site.urls),
+    path('', include('your_app.urls')),
+]
+```
+
+<br>
+
+## Auth Configuration Options
 
 The `WristbandAuth()` constructor is used to instantiate the Wristband SDK. It takes an `AuthConfig` type as an argument.
 
@@ -1121,9 +1516,9 @@ def __init__(self, auth_config: AuthConfig) -> None:
 | dangerously_disable_secure_cookies | bool | No | No | USE WITH CAUTION: If set to `True`, the "Secure" attribute will not be included in any cookie settings. This should only be done when testing in local development environments that don't have HTTPS enabed.  If not provided, this value defaults to `False`. |
 | is_application_custom_domain_active | Optional[bool] | No | Yes | Indicates whether your Wristband application is configured with an application-level custom domain that is active. This tells the SDK which URL format to use when constructing the Wristband Authorize Endpoint URL. This has no effect on any tenant custom domains passed to your Login Endpoint either via the `tenant_custom_domain` query parameter or via the `default_tenant_custom_domain` config.  Defaults to `False`. |
 | login_state_secret | Optional[str] | No | No | A 32 character (or longer) secret used for encryption and decryption of login state cookies. If not provided, it will default to using the client secret. For enhanced security, it is recommended to provide a value that is unique from the client secret. You can run `python3 -c \"import secrets; print(secrets.token_urlsafe(32))\"` to create a secret from your CLI. |
-| login_url | Optional[str] | Only when `auto_configure_enabled` is set to `False` | Yes | The URL of your application's login endpoint.  This is the endpoint within your application that redirects to Wristband to initialize the login flow. If you intend to use tenant subdomains in your Login Endpoint URL, then this value must contain the `{tenant_domain}` token. For example: `https://{tenant_domain}.yourapp.com/auth/login`. |
+| login_url | Optional[str] | Only when `auto_configure_enabled` is set to `False` | Yes | The URL of your application's login endpoint.  This is the endpoint within your application that redirects to Wristband to initialize the login flow. If you intend to use tenant subdomains in your Login Endpoint URL, then this value must contain the `{tenant_name}` token. For example: `https://{tenant_name}.yourapp.com/auth/login`. |
 | parse_tenant_from_root_domain | Optional[str] | Only if using tenant subdomains in your application | Yes | The root domain for your application. This value only needs to be specified if you intend to use tenant subdomains in your Login and Callback Endpoint URLs.  The root domain should be set to the portion of the domain that comes after the tenant subdomain.  For example, if your application uses tenant subdomains such as `tenantA.yourapp.com` and `tenantB.yourapp.com`, then the root domain should be set to `yourapp.com`. This has no effect on any tenant custom domains passed to your Login Endpoint either via the `tenant_custom_domain` query parameter or via the `default_tenant_custom_domain` config. When this configuration is enabled, the SDK extracts the tenant subdomain from the host and uses it to construct the Wristband Authorize URL. |
-| redirect_uri | Optional[str] | Only when `auto_configure_enabled` is set to `False` | Yes | The URI that Wristband will redirect to after authenticating a user.  This should point to your application's callback endpoint. If you intend to use tenant subdomains in your Callback Endpoint URL, then this value must contain the `{tenant_domain}` token. For example: `https://{tenant_domain}.yourapp.com/auth/callback`. |
+| redirect_uri | Optional[str] | Only when `auto_configure_enabled` is set to `False` | Yes | The URI that Wristband will redirect to after authenticating a user.  This should point to your application's callback endpoint. If you intend to use tenant subdomains in your Callback Endpoint URL, then this value must contain the `{tenant_name}` token. For example: `https://{tenant_name}.yourapp.com/auth/callback`. |
 | scopes | List[str] | No | No | The scopes required for authentication. Specified scopes can alter which data is returned from the `callback()` method's `callback_data` return type.  Refer to the [Wristband Authorize API](https://docs.wristband.dev/reference/authorizev1) documentation for currently supported scopes. The default value is `["openid", "offline_access", "email"]`. |
 | token_expiration_buffer | int | No | No | Buffer time (in seconds) to subtract from the access token’s expiration time. This causes the token to be treated as expired before its actual expiration, helping to avoid token expiration during API calls. Defaults to 60 seconds. |
 | wristband_application_vanity_domain | str | Yes | No | The vanity domain of the Wristband application. |
@@ -1132,11 +1527,16 @@ def __init__(self, auth_config: AuthConfig) -> None:
 
 ### `WristbandAuth()`
 
-```ts
-wristband_auth: WristbandAuth = WristbandAuth(auth_config: AuthConfig)
+```python
+wristband_auth = WristbandAuth(auth_config: AuthConfig)
 ```
 
 This constructor creates an instance of `WristbandAuth` using lazy auto-configuration. Auto-configuration is enabled by default and will fetch any missing configuration values from the Wristband SDK Configuration Endpoint when any auth function is first called (i.e. `login`, `callback`, etc.). Set `auto_configure_enabled` to `False` disable to prevent the SDK from making an API request to the Wristband SDK Configuration Endpoint. In the event auto-configuration is disabled, you must manually configure all required values. Manual configuration values take precedence over auto-configured values.
+
+| Method | When Config is Fetched | Use When |
+| ------ | ---------------------- | -------- |
+| WristbandAuth() (default) | Lazily, on first auth method call (login, callback, etc.) | Standard usage - allows your app to start without waiting for config |
+| WristbandAuth.discover() | Eagerly, immediately when called | You want to fail fast at startup if auto-config is unavailable |
 
 **Minimal config with auto-configure (default behavior)**
 ```python
@@ -1206,8 +1606,8 @@ WRISTBAND_AUTH = {
     "wristband_application_vanity_domain": "auth.custom.com",
     # Must manually configure non-auto-configurable fields
     "is_application_custom_domain_active": True,
-    "login_url": "https://{tenant_domain}.custom.com/auth/login",
-    "redirect_uri": "https://{tenant_domain}.custom.com/auth/callback",
+    "login_url": "https://{tenant_name}.custom.com/auth/login",
+    "redirect_uri": "https://{tenant_name}.custom.com/auth/callback",
     "parse_tenant_from_root_domain": "custom.com",
 }
 
@@ -1262,22 +1662,31 @@ except WristbandError as error:
 
 <br>
 
-## API
+## Auth API
 
-### `login(self, request: HttpRequest, config: Optional[LoginConfig]) -> HttpResponse:`
+### login()
+
+```python
+def login(self, request: HttpRequest, config: Optional[LoginConfig]) -> HttpResponse:
+```
+
+| Parameter | Type | Required | Description |
+| --------- | ---- | -------- | ----------- |
+| request | HttpRequest | Yes | The Django request object. |
+| config | LoginConfig | No | Optional configuration if your application needs custom behavior. |
+
+Wristband requires that your application specify a Tenant-Level domain when redirecting to the Wristband Authorize Endpoint when initiating an auth request. When your application redirects the user to your Django Login Endpoint, there are two ways to accomplish getting the `tenant_name` information: passing a query parameter or using tenant subdomains.
 
 ```python
 response: HttpResponse = wristband_auth.login(request)
 ```
-
-Wristband requires that your application specify a Tenant-Level domain when redirecting to the Wristband Authorize Endpoint when initiating an auth request. When your application redirects the user to your Django Login Endpoint, there are two ways to accomplish getting the `tenant_domain_name` information: passing a query parameter or using tenant subdomains.
 
 The `login()` method can also take optional configuration if your application needs custom behavior:
 
 | LoginConfig Field | Type | Required | Description |
 | ----------------- | ---- | -------- | ----------- |
 | custom_state | Optional[dict[str, Any]] | No | Additional state to be saved in the Login State Cookie. Upon successful completion of an auth request/login attempt, your Callback Endpoint will return this custom state (unmodified) as part of the return type. |
-| default_tenant_domain_name | str | No | An optional default tenant domain name to use for the login request in the event the tenant domain cannot be found in either the subdomain or query parameters (depending on your subdomain configuration). |
+| default_tenant_name | str | No | An optional default tenant name to use for the login request in the event the tenant name cannot be found in either the subdomain or query parameters (depending on your subdomain configuration). |
 | default_tenant_custom_domain | str | No | An optional default tenant custom domain to use for the login request in the event the tenant custom domain cannot be found in the query parameters. |
 | return_url | string | No | The URL to return to after authentication is completed. If a value is provided, then it takes precedence over the `return_url` request query parameter. |
 
@@ -1287,18 +1696,18 @@ Wristband supports various tenant domain configurations, including subdomains an
 
 1. `tenant_custom_domain` query parameter: If provided, this takes top priority.
 2. Tenant subdomain in the URL: Used if `parse_tenant_from_root_domain` is specified and there is a subdomain present in the host.
-3. `tenant_domain` query parameter: Evaluated if no tenant subdomain is found in the host.
+3. `tenant_name` query parameter: Evaluated if no tenant subdomain is found in the host.
 4. `default_tenant_custom_domain` in LoginConfig: Used if none of the above are present.
-5. `default_tenant_domain` in LoginConfig: Used as the final fallback.
+5. `default_tenant_name` in LoginConfig: Used as the final fallback.
 
 If none of these are specified, the SDK redirects users to the Application-Level Login (Tenant Discovery) Page.
 
-#### Tenant Domain Query Param
+#### Tenant Name Query Param
 
-If your application does not wish to utilize subdomains for each tenant, you can pass the `tenant_domain` query parameter to your Login Endpoint, and the SDK will be able to make the appropriate redirection to the Wristband Authorize Endpoint.
+If your application does not wish to utilize subdomains for each tenant, you can pass the `tenant_name` query parameter to your Login Endpoint, and the SDK will be able to make the appropriate redirection to the Wristband Authorize Endpoint.
 
 ```sh
-GET https://yourapp.ai/auth/login?tenant_domain=customer01
+GET https://yourapp.ai/auth/login?tenant_name=customer01
 ```
 
 Your AuthConfig would look like the following when creating an SDK instance without any subdomains:
@@ -1331,21 +1740,21 @@ WRISTBAND_AUTH = {
     "client_id": "dummyso5hzdvbnof3bwgccejxy",
     "client_secret": "dummy77124b13037d035be10d727806f",
     "login_state_secret": "dummy7fdbeccab7d413493072dfcc52f7475",
-    "login_url": 'https://{tenant_domain}.yourapp.ai/auth/login',
-    "redirect_uri": 'https://{tenant_domain}.yourapp.ai/auth/callback',
+    "login_url": 'https://{tenant_name}.yourapp.ai/auth/login',
+    "redirect_uri": 'https://{tenant_name}.yourapp.ai/auth/callback',
     "parse_tenant_from_root_domain": "yourapp.ai",
     "wristband_application_vanity_domain": "yourapp-yourcompany.us.wristband.dev",
 }
 ```
 
-#### Default Tenant Domain Name
+#### Default Tenant Name
 
-For certain use cases, it may be useful to specify a default tenant domain in the event that the `login()` method cannot find a tenant domain in either the query parameters or in the URL subdomain. You can specify a fallback default tenant domain via a `LoginConfig` object:
+For certain use cases, it may be useful to specify a default tenant name in the event that the `login()` method cannot find a tenant name in either the query parameters or in the URL subdomain. You can specify a fallback default tenant name via a `LoginConfig` object:
 
 ```python
 response = wristband_auth.login(
     request=request, 
-    config=LoginConfig(default_tenant_domain_name="default")
+    config=LoginConfig(default_tenant_name="default")
 )
 ```
 
@@ -1419,79 +1828,146 @@ The return URL is stored in the Login State Cookie, and it is available to you i
 
 <br/>
 
-### `callback(self, request: HttpRequest) -> CallbackResult:`
+### callback()
+
+```python
+def callback(self, request: HttpRequest) -> CallbackResult:
+```
+
+| Parameter | Type | Required | Description |
+| --------- | ---- | -------- | ----------- |
+| request | HttpRequest | Yes | The Django request object. |
+
+After a user authenticates on the Tenant-Level Login Page, Wristband will redirect to your Django Callback Endpoint with an authorization code which can be used to exchange for an access token.
 
 ```python
 callback_result: CallbackResult = wristband_auth.callback(request)
-response: HttpResponse = wristband_auth.create_callback_response(request, "https://yourapp.ai/home")
 ```
 
-After a user authenticates on the Tenant-Level Login Page, Wristband will redirect to your Django Callback Endpoint with an authorization code which can be used to exchange for an access token. It will also pass the state parameter that was generated during the Login Endpoint.
+It will also pass the state parameter that was generated during the Login Endpoint.
 
 ```sh
-GET https://customer01.yourapp.ai/auth/callback?state=f983yr893hf89ewn0idjw8e9f&code=shcsh90jf9wc09j9w0jewc
+GET https://customer01.yourapp.io/auth/callback?state=f983yr893hf89ewn0idjw8e9f&code=shcsh90jf9wc09j9w0jewc
 ```
 
-The SDK will validate that the incoming state matches the Login State Cookie, and then it will call the Wristband Token Endpoint to exchange the authorizaiton code for JWTs. Lastly, it will call the Wristband Userinfo Endpoint to get any user data as specified by the `scopes` in your SDK configuration. The return type of the callback method is a CallbackResult type containing the result of what happened during callback execution as well as any accompanying data:
+The SDK will validate that the incoming state matches the Login State Cookie, and then it will call the Wristband Token Endpoint to exchange the authorizaiton code for JWTs. Lastly, it will call the Wristband Userinfo Endpoint to get any user data as specified by the `scopes` in your SDK configuration.
+
+The callback method returns a discriminated union type `CallbackResult` that indicates whether the callback succeeded or requires a redirect:
+
+**CallbackResult Variants:**
+
+| Type | Description | Fields |
+| ---- | ----------- | ------ |
+| `CompletedCallbackResult` | Callback successfully completed with authentication data | <ul><li>`type` (always `CallbackResultType.COMPLETED`)</li><li>`callback_data`</li></ul> |
+| `RedirectRequiredCallbackResult` | Redirect required to retry authentication | <ul><li>`type` (always `CallbackResultType.REDIRECT_REQUIRED`)</li><li>`redirect_url`</li><li>`reason`</li></ul> |
+
+**All Possible CallbackResult Fields:**
 
 | CallbackResult Field | Type | Description |
 | -------------------- | ---- | ----------- |
+| type | `CallbackResultType`  | Enum representing the type of the callback result. |
 | callback_data | `CallbackData` | The callback data received after authentication (`COMPLETED` result only). |
 | redirect_url | str | A URL that you need to redirect to (`REDIRECT_REQUIRED` result only). For some edge cases, the SDK will require a redirect to restart the login flow. |
-| type | `CallbackResultType`  | Enum representing the type of the callback result. |
+| reason | `CallbackFailureReason` | Specific reason why the callback failed and requires redirect (`REDIRECT_REQUIRED` result only) |
 
-The following are the possible `CallbackResultType` enum values that can be returned from the callback execution:
+<br>
 
-| CallbackResultType  | Description |
-| ------------------- | ----------- |
-| `COMPLETED`  | Indicates that the callback is successfully completed and data is available for creating a session. |
-| `REDIRECT_REQUIRED`  | Indicates that a redirect to the login endpoint is required. |
+**CallbackResultType Enum:**
 
-When the callback returns a `COMPLETED` result, all of the token and userinfo data also gets returned. This enables your application to create an application session for the user and then redirect them back into your application.
+| Value | Description |
+| ----- | ----------- |
+| `COMPLETED` | Indicates that the callback is successfully completed and data is available for creating a session. |
+| `REDIRECT_REQUIRED` | Indicates that a redirect to the login endpoint is required. |
 
-The `CallbackData` is defined as follows:
+<br>
+
+**CallbackFailureReason Enum:**
+
+When a redirect is required, the `reason` field indicates why the callback failed:
+
+| Value | Description |
+| ------ | ----------- |
+| `MISSING_LOGIN_STATE` | Login state cookie was not found (cookie expired or bookmarked callback URL) |
+| `INVALID_LOGIN_STATE` | Login state validation failed (possible CSRF attack or cookie tampering) |
+| `LOGIN_REQUIRED` | Wristband returned a login_required error (session expired or max_age elapsed) |
+| `INVALID_GRANT` | Authorization code was invalid, expired, or already used |
+
+<br>
+
+**CallbackData:**
+
+When the callback returns a `COMPLETED` result, all of the token and userinfo data also gets returned. This enables your application to create an application session for the user and then redirect them back into your application. The `CallbackData` is defined as follows:
 
 | CallbackData Field | Type | Description |
 | ------------------ | ---- | ----------- |
 | access_token | string | The access token that can be used for accessing Wristband APIs as well as protecting your application's backend APIs. |
 | custom_state | Optional[dict[str, Any]] | If you injected custom state into the Login State Cookie during the Login Endpoint for the current auth request, then that same custom state will be returned in this field. |
 | expires_at | int | The absolute expiration time of the access token in milliseconds since the Unix epoch. The `token_expiration_buffer` SDK configuration is accounted for in this value. |
-| expires_in | int | The durtaion from the current time until the access token is expired (in seconds). The `token_expiration_buffer` SDK configuration is accounted for in this value. |
+| expires_in | int | The duration from the current time until the access token is expired (in seconds). The `token_expiration_buffer` SDK configuration is accounted for in this value. |
 | id_token | str | The ID token uniquely identifies the user that is authenticating and contains claim data about the user. |
 | refresh_token | Optional[str] | The refresh token that renews expired access tokens with Wristband, maintaining continuous access to services. |
 | return_url | Optional[str] | The URL to return to after authentication is completed. |
 | tenant_custom_domain | Optional[str] | The tenant custom domain for the tenant that the user belongs to (if applicable). |
-| tenant_domain_name | str | The domain name of the tenant the user belongs to. |
-| user_info | dict[str, Any] | Data for the current user retrieved from the Wristband Userinfo Endpoint. The data returned in this object follows the format laid out in the [Wristband Userinfo Endpoint documentation](https://docs.wristband.dev/reference/userinfov1). The exact fields that get returned are based on the scopes you configured in the SDK. |
+| tenant_name | str | The name of the tenant the user belongs to. |
+| user_info | `UserInfo` | User information that is retrieved from the [Wristband Userinfo Endpoint](https://docs.wristband.dev/reference/userinfov1) and transformed to user-friendly field names that match the Wristband User entity naming convention. The exact fields that get returned are based on the scopes you configured in the SDK. |
 
+<br>
+
+**UserInfo:**
+
+| UserInfo Field | Type | Always Returned | Description |
+| -------------- | ---- | --------------- | ----------- |
+| user_id | str | Yes | ID of the user. |
+| tenant_id | str | Yes | ID of the tenant that the user belongs to. |
+| application_id | str | Yes | ID of the application that the user belongs to. |
+| identity_provider_name | str | Yes | Name of the identity provider. |
+| full_name | Optional[str] | No | End-User's full name in displayable form (requires `profile` scope). |
+| given_name | Optional[str] | No | Given name(s) or first name(s) of the End-User (requires `profile` scope). |
+| family_name | Optional[str] | No | Surname(s) or last name(s) of the End-User (requires `profile` scope). |
+| middle_name | Optional[str] | No | Middle name(s) of the End-User (requires `profile` scope). |
+| nickname | Optional[str] | No | Casual name of the End-User (requires `profile` scope). |
+| display_name | Optional[str] | No | Shorthand name by which the End-User wishes to be referred (requires `profile` scope). |
+| picture_url | Optional[str] | No | URL of the End-User's profile picture (requires `profile` scope). |
+| email | Optional[str] | No | End-User's preferred email address (requires `email` scope). |
+| email_verified | Optional[bool] | No | True if the End-User's email address has been verified (requires `email` scope). |
+| gender | Optional[str] | No | End-User's gender (requires `profile` scope). |
+| birthdate | Optional[str] | No | End-User's birthday in YYYY-MM-DD format (requires `profile` scope). |
+| time_zone | Optional[str] | No | End-User's time zone (requires `profile` scope). |
+| locale | Optional[str] | No | End-User's locale as BCP47 language tag, e.g., "en-US" (requires `profile` scope). |
+| phone_number | Optional[str] | No | End-User's telephone number in E.164 format (requires `phone` scope). |
+| phone_number_verified | Optional[bool] | No | True if the End-User's phone number has been verified (requires `phone` scope). |
+| updated_at | Optional[int] | No | Time the End-User's information was last updated as Unix timestamp (requires `profile` scope). |
+| roles | Optional[List[`UserInfoRole`]] | No | The roles assigned to the user (requires `roles` scope). |
+| custom_claims | Optional[dict[str, Any]] | No | Object containing any configured custom claims. |
+
+<br>
+
+**UserInfoRole:**
+
+| UserInfoRole Field | Type | Description |
+| ------------------ | ---- | ----------- |
+| id | str | Globally unique ID of the role. |
+| name | str | The role name (e.g., "app:app-name:admin"). |
+| display_name | str | The human-readable display name for the role. |
+
+<br>
 
 #### Handling Callback Results
 
-Regardless of the result type, you should call `create_callback_response()` to produce the appropriate redirect response with all required headers set.
+Regardless of the result type (`COMPLETED` and `REDIRECT_REQUIRED`), you should call `create_callback_response()` to produce the appropriate redirect response with all required headers set.
 
-##### Type: REDIRECT_REQUIRED
-
-In specific edge cases, the SDK returns a redirect URL with a result type of `REDIRECT_REQUIRED`. These cases include:
+There are edge cases where a redirect URL is returned by the SDK. The following are edge cases where this occurs:
 
 - The Login State Cookie is missing by the time Wristband redirects back to the Callback Endpoint.
 - The `state` query parameter sent from Wristband to your Callback Endpoint does not match the Login State Cookie.
 - Wristband sends an `error` query parameter to your Callback Endpoint, and it is an expected error type that the SDK knows how to resolve.
 
-The location of the redirect depends on whether the SDK is able to determine which tenant the user is attempting to authenticate against. If the tenant domain can be determined, then the user will get redirected back to your Django Login Endpoint.
+The location of where the user gets redirected to in these scenarios depends on if the application is using tenant subdomains and if the SDK is able to determine which tenant the user is currently attempting to log in to. The resolution happens in the following order:
 
-```python
-if callback_result.type == CallbackResultType.REDIRECT_REQUIRED:
-    return wristband_auth.create_callback_response(request, callback_result.redirect_url)
-```
+1. If the tenant domain can be determined, then the user will get redirected back to your Django Login Endpoint.
+2. Otherwise, the user will be sent to the Wristband-hosted Application-Level Login (Tenant Discovery) Page.
 
-##### Type: COMPLETED
-
-If the result type is `COMPLETED`, no redirect URL is provided. You're free to redirect the user to any destination your application needs.
-
-```python
-appUrl = callback_result.callback_data.returnUrl or 'https://yourapp.ai/home'
-return wristband_auth.create_callback_response(request, appUrl)
-```
+<br>
 
 #### Error Parameters
 
@@ -1514,23 +1990,64 @@ The error types that get automatically resolved in the SDK are:
 
 For all other error types, the SDK will throw a `WristbandError` object (containing the error and description) that your application can catch and handle. Most errors come from SDK configuration issues during development that should be addressed before release to production.
 
+<br>
 
-### `logout(self, request: HttpRequest, config: Optional[LogoutConfig]) -> HttpResponse:`
+### create_callback_response()
 
 ```python
-response: HttpResponse = wristband_auth.logout(
-    request=request,
-    config=LogoutConfig(refresh_token="98yht308hf902hc90wh09")
-)
+def create_callback_response(self, request: HttpRequest, redirect_url: str) -> HttpResponse:
 ```
 
-When users of your application are ready to log out or their application session expires, you should redirect the user to your Django Logout Endpoint.
+| Parameter | Type | Required | Description |
+| --------- | ---- | -------- | ----------- |
+| request | HttpRequest | Yes | The Django request object. |
+| redirect_url | str | Yes | The URL to redirect the user to after authentication completes. |
+
+Your Callback Endpoint will call `create_callback_response()` after the `callback()` method is finished in order to complete the authentication flow. This will return a Django response object with the appropriate response headers and cookie handling set.
+
+```python
+callback_result: CallbackResult = wristband_auth.callback(request)
+
+# Handle redirect required scenario
+if isinstance(callback_result, RedirectRequiredCallbackResult):
+    return wristband_auth.create_callback_response(request, callback_result.redirect_url)
+
+# Create session before returning response
+session.from_callback(callback_result.callback_data)
+post_callback_url = callback_result.callback_data.return_url or "<your_app_home_url>"
+return wristband_auth.create_callback_response(request, post_callback_url)
+```
+
+<br>
+
+### logout()
+
+```python
+def logout(self, request: HttpRequest, config: Optional[LogoutConfig]) -> HttpResponse:
+```
+
+| Parameter | Type | Required | Description |
+| --------- | ---- | -------- | ----------- |
+| request | Request | Yes | The Django request object. |
+| config | LogoutConfig | No | Optional configuration if your application needs custom behavior. |
+
+When users of your application are ready to log out or their application session expires, your frontend should redirect the user to your Django Logout Endpoint. If your application created a session, it should destroy the session before invoking the `wristband_auth.logout()` method.
 
 ```sh
 GET https://customer01.yourapp.ai/auth/logout
 ```
 
-If your application created a session, it should destroy it before invoking the `logout()` method.  This method can also take an optional `LogoutConfig` argument:
+```python
+logout_config = LogoutConfig(
+    refresh_token=request.session.refresh_token,
+    tenant_name=request.session.tenant_name,
+)
+
+request.session.flush()
+return wristband_auth.logout(request, logout_config)
+```
+
+This method can also take an optional `LogoutConfig` argument:
 
 | LogoutConfig Field | Type | Required | Description |
 | ------------------ | ---- | -------- | ----------- |
@@ -1538,17 +2055,17 @@ If your application created a session, it should destroy it before invoking the 
 | refresh_token | Optional[str] | No | The refresh token to revoke. |
 | state | Optional[str] | No | Optional value that will be appended as a query parameter to the resolved logout URL, if provided. Maximum length of 512 characters. |
 | tenant_custom_domain | Optional[str] | No | The tenant custom domain for the tenant that the user belongs to (if applicable). |
-| tenant_domain_name | Optional[str] | No | The domain name of the tenant the user belongs to. |
+| tenant_name | Optional[str] | No | The name of the tenant the user belongs to. |
 
 #### Which Domains Are Used in the Logout URL?
 
 Wristband supports various tenant domain configurations, including subdomains and custom domains. The SDK automatically determines the appropriate domain configuration when constructing the Wristband Logout URL, which your login endpoint will redirect users to during the logout flow. The selection follows this precedence order:
 
 1. `tenant_custom_domain` in LogoutConfig: If provided, this takes top priority.
-2. `tenant_domain_name` in LogoutConfig: This takes the next priority if `tenant_custom_domain` is not present.
-3. `tenant_custom_domain` query parameter: Evaluated if present and there is also no LogoutConfig provided for either `tenant_custom_domain` or `tenant_domain_name`.
+2. `tenant_name` in LogoutConfig: This takes the next priority if `tenant_custom_domain` is not present.
+3. `tenant_custom_domain` query parameter: Evaluated if present and there is also no LogoutConfig provided for either `tenant_custom_domain` or `tenant_name`.
 4. Tenant subdomain in the URL: Used if none of the above are present, and `parse_tenant_from_root_domain` is specified, and the subdomain is present in the host.
-5. `tenant_domain` query parameter: Used as the final fallback.
+5. `tenant_name` query parameter: Used as the final fallback.
 
 If none of these are specified, the SDK redirects users to the Application-Level Login (Tenant Discovery) Page.
 
@@ -1556,7 +2073,7 @@ If none of these are specified, the SDK redirects users to the Application-Level
 
 If your application requested refresh tokens during the Login Workflow (via the `offline_access` scope), it is crucial to revoke the user's access to that refresh token when logging out. Otherwise, the refresh token would still be valid and able to refresh new access tokens.  You should pass the refresh token into the LogoutConfig when invoking the `logout()` method, and the SDK will call to the [Wristband Revoke Token Endpoint](https://docs.wristband.dev/reference/revokev1) automatically.
 
-#### Resolving Tenant Domain Names
+#### Resolving Tenant Domains
 
 Much like the Login Endpoint, Wristband requires your application specify a Tenant-Level domain when redirecting to the [Wristband Logout Endpoint](https://docs.wristband.dev/reference/logoutv1). If your application does not utilize tenant subdomains, then you can either explicitly pass it into the LogoutConfig:
 
@@ -1565,22 +2082,22 @@ response: HttpResponse = wristband_auth.logout(
     request=request,
     config=LogoutConfig(
         refresh_token="98yht308hf902hc90wh09",
-        tenant_domain_name="customer01"
+        tenant_name="customer01"
     )
 )
 ```
 
-...or you can alternatively pass the `tenant_domain` query parameter in your redirect request to Logout Endpoint:
+...or you can alternatively pass the `tenant_name` query parameter in your redirect request to Logout Endpoint:
 
 ```python
-# Logout Request URL -> "https://yourapp.ai/auth/logout?client_id=123&tenant_domain=customer01"
+# Logout Request URL -> "https://yourapp.ai/auth/logout?client_id=123&tenant_name=customer01"
 response: HttpResponse = wristband_auth.logout(
     request=request,
     config=LogoutConfig(refresh_token="98yht308hf902hc90wh09")
 )
 ```
 
-If your application uses tenant subdomains, then passing the `tenant_domain_name` field to the LogoutConfig is not required since the SDK will automatically parse the subdomain from the URL as long as the `parse_tenant_from_root_domain` SDK config is set.
+If your application uses tenant subdomains, then passing the `tenant_name` field to the LogoutConfig is not required since the SDK will automatically parse the subdomain from the URL as long as the `parse_tenant_from_root_domain` SDK config is set.
 
 #### Tenant Custom Domains
 
@@ -1606,7 +2123,7 @@ response: HttpResponse = wristband_auth.logout(
 )
 ```
 
-If your application supports a mixture of tenants that use tenant subdomains and tenant custom domains, then you should consider passing both the tenant domain names and tenant custom domains (either via LogoutConfig or by query parameters) to ensure all use cases are handled by the SDK.
+If your application supports a mixture of tenants that use tenant subdomains and tenant custom domains, then you should consider passing both the tenant names and tenant custom domains (either via LogoutConfig or by query parameters) to ensure all use cases are handled by the SDK.
 
 #### Preserving State After Logout
 
@@ -1617,7 +2134,7 @@ response: HttpResponse = wristband_auth.logout(
     request=request,
     config=LogoutConfig(
         refresh_token="98yht308hf902hc90wh09",
-        tenant_domain_name="customer01",
+        tenant_name="customer01",
         state="user_initiated_logout"
     )
 )
@@ -1632,7 +2149,7 @@ https://customer01.auth.yourapp.io/api/v1/logout?client_id=123&state=user_initia
 After logout completes, Wristband will redirect to your configured redirect URL (either your Login Endpoint by default, or a custom logout redirect URL if configured) with the `state` parameter included:
 
 ```sh
-https://yourapp.io/auth/login?tenant_domain=customer01&state=user_initiated_logout
+https://yourapp.io/auth/login?tenant_name=customer01&state=user_initiated_logout
 ```
 
 This is useful for tracking logout context, displaying post-logout messages, or handling different logout scenarios. The state value is limited to 512 characters and will be URL-encoded automatically.
@@ -1646,13 +2163,24 @@ response: HttpResponse = wristband_auth.logout(
     request=request,
     config=LogoutConfig(
         refresh_token="98yht308hf902hc90wh09",
-        tenant_domain_name="customer01",
+        tenant_name="customer01",
         redirect_url="https://custom-logout.com"
     )
 )
 ```
 
-### `refresh_token_if_expired(self, refresh_token: Optional[str], expires_at: Optional[int]) -> Optional[TokenData]:`
+### refresh_token_if_expired()
+
+```python
+def refresh_token_if_expired(self, refresh_token: str, expires_at: int) -> Optional[TokenData]:
+```
+
+| Argument | Type | Required | Description |
+| -------- | ---- | -------- | ----------- |
+| expires_at | int | Yes | Unix timestamp in milliseconds at which the token expires. |
+| refresh_token | str | Yes | The refresh token used to send to Wristband when access tokens expire in order to receive new tokens. |
+
+If your application is using access tokens generated by Wristband either to make API calls to Wristband or to protect other backend APIs, then your applicaiton needs to ensure that access tokens don't expire until the user's session ends.  You can use the refresh token to generate new access tokens.
 
 ```python
 token_data: Optional[TokenData] = wristband_auth.refresh_token_if_expired(
@@ -1660,13 +2188,6 @@ token_data: Optional[TokenData] = wristband_auth.refresh_token_if_expired(
     expires_at=1710707503788
 )
 ```
-
-If your application is using access tokens generated by Wristband either to make API calls to Wristband or to protect other backend APIs, then your applicaiton needs to ensure that access tokens don't expire until the user's session ends.  You can use the refresh token to generate new access tokens.
-
-| Argument | Type | Required | Description |
-| -------- | ---- | -------- | ----------- |
-| expires_at | int | Yes | Unix timestamp in milliseconds at which the token expires. |
-| refresh_token | str | Yes | The refresh token used to send to Wristband when access tokens expire in order to receive new tokens. |
 
 If the `refresh_token_if_expired()` method finds that your token has not expired yet, it will return `None` as the value, which means your auth middleware can simply continue forward as usual.
 
@@ -1676,9 +2197,847 @@ The `TokenData` is defined as follows:
 | --------------- | ---- | ----------- |
 | access_token | string | The access token that can be used for accessing Wristband APIs as well as protecting your application's backend APIs. |
 | expires_at | int | The absolute expiration time of the access token in milliseconds since the Unix epoch. The `token_expiration_buffer` SDK configuration is accounted for in this value. |
-| expires_in | int | The durtaion from the current time until the access token is expired (in seconds). The `token_expiration_buffer` SDK configuration is accounted for in this value. |
+| expires_in | int | The duration from the current time until the access token is expired (in seconds). The `token_expiration_buffer` SDK configuration is accounted for in this value. |
 | id_token | str | The ID token uniquely identifies the user that is authenticating and contains claim data about the user. |
 | refresh_token | Optional[str] | The refresh token that renews expired access tokens with Wristband, maintaining continuous access to services. |
+
+<br>
+
+## Session Management
+
+After successful authentication, Wristband user and token data is stored in Django's session. This section documents the session fields, type hints, and access patterns.
+
+This SDK uses Django's built-in session framework. The [encrypted cookie session engine](#3-set-up-session-management) is recommended for getting started, but you can use any Django session backend. For more information on Django's session framework, see the [Django Sessions documentation](https://docs.djangoproject.com/en/stable/topics/http/sessions/).
+
+<br>
+
+### Session Fields
+
+These fields are automatically populated when you call `session_from_callback()` after successful Wristband authentication:
+
+| Session Field | Type | Always Present | Description |
+| ------------- | ---- | -------------- | ----------- |
+| `is_authenticated` | `bool` | Yes | Whether the user is authenticated (always `True` after `session_from_callback()`). |
+| `access_token` | `str` | Yes | JWT access token for making authenticated API calls to Wristband and other services. |
+| `expires_at` | `int` | Yes | Token expiration timestamp (milliseconds since Unix epoch). Accounts for `token_expiration_buffer` from SDK config. |
+| `user_id` | `str` | Yes | Unique identifier for the authenticated user. |
+| `tenant_id` | `str` | Yes | Unique identifier for the tenant that the user belongs to. |
+| `tenant_name` | `str` | Yes | Name of the tenant that the user belongs to. |
+| `identity_provider_name` | `str` | Yes | Name of the identity provider that the user belongs to. |
+| `refresh_token` | `str` | No | Refresh token for obtaining new access tokens when they expire. Only present if `offline_access` scope was requested during authentication. |
+| `tenant_custom_domain` | `str` | No | Custom domain for the tenant, if configured. Only present if a tenant custom domain was used during authentication. |
+
+<br>
+
+### Type Hints for Session Data
+
+For better IDE autocomplete and type checking, you can use the `WristbandSessionData` TypedDict:
+
+```python
+from typing import cast
+from wristband.django_auth import WristbandSessionData
+
+def my_view(request):
+    # Optional: Cast for IDE autocomplete
+    session: WristbandSessionData = cast(WristbandSessionData, request.session)
+    
+    # IDE now knows these are strings
+    user_id = session['user_id']
+    tenant_id = session['tenant_id']
+    
+    # IDE knows this is Optional[str]
+    refresh_token = session.get('refresh_token')
+```
+
+> **Note:** Using `WristbandSessionData` is entirely optional. It provides type hints for Wristband-specific fields but doesn't affect runtime behavior.
+
+<br>
+
+### Session Access Patterns
+
+Django sessions work like dictionaries. You can access Wristband session data using standard Django session patterns:
+
+```python
+# Read session data (dict-style)
+user_id = request.session['user_id']
+tenant_id = request.session.get('tenant_id')
+refresh_token = request.session.get('refresh_token')  # Returns None if not present
+
+# Check if field exists
+if 'refresh_token' in request.session:
+    token = request.session['refresh_token']
+
+# Update session data
+request.session['last_activity'] = time.time()
+request.session.modified = True  # Mark as modified to ensure Django saves it
+
+# Clear session (logout)
+request.session.flush()
+```
+
+<br>
+
+### Session Helper Functions
+
+The SDK provides helper functions for working with sessions:
+
+#### session_from_callback()
+
+```python
+def session_from_callback(
+    request: HttpRequest,
+    callback_data: CallbackData,
+    custom_fields: Optional[Dict[str, Any]] = None
+) -> None:
+```
+
+Populate Django session from Wristband callback data. Automatically extracts core user and tenant info from callback data and stores it in the session. Optionally merges custom fields.
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+| --------- | ---- | -------- | ----------- |
+| request | `HttpRequest` | Yes | Django HttpRequest with session middleware enabled. |
+| callback_data | `CallbackData` | Yes | Callback data from `wristband_auth.callback()`. |
+| custom_fields | `Optional[Dict[str, Any]]` | No | Additional fields to store in session (must be JSON-serializable). |
+
+**Raises:**
+
+| Exception | Condition |
+| --------- | --------- |
+| `RuntimeError` | If SessionMiddleware is not installed. |
+| `ValueError` | If `request` or `callback_data` is `None`, or if `callback_data.user_info` is missing. |
+
+**Example with default values:**
+
+```python
+from django.http import HttpRequest, HttpResponse
+from django.views.decorators.http import require_GET
+from wristband.django_auth import RedirectRequiredCallbackResult, session_from_callback
+from your_app.wristband import wristband_auth
+
+@require_GET
+def callback_endpoint(request: HttpRequest) -> HttpResponse:
+    callback_result = wristband_auth.callback(request)
+    
+    if isinstance(callback_result, RedirectRequiredCallbackResult):
+        return wristband_auth.create_callback_response(request, callback_result.redirect_url)
+    
+    # Populate session from callback data
+    session_from_callback(request, callback_result.callback_data)
+    
+    post_callback_url = callback_result.callback_data.return_url or '/'
+    return wristband_auth.create_callback_response(request, post_callback_url)
+```
+
+**Example with custom fields included:**
+
+```python
+session_from_callback(
+    request,
+    callback_result.callback_data,
+    custom_fields={'role': 'admin', 'last_login': time.time()}
+)
+```
+
+**Fields stored in session:**
+
+- `is_authenticated` (always `True`)
+- `access_token`
+- `expires_at`
+- `user_id`
+- `tenant_id`
+- `tenant_name`
+- `identity_provider_name`
+- `refresh_token` (only if `offline_access` scope was requested)
+- `tenant_custom_domain` (only if present in callback data)
+- Any `custom_fields` provided
+
+#### get_session_response()
+
+```python
+def get_session_response(
+    request: HttpRequest,
+    metadata: Optional[Dict[str, Any]] = None
+) -> SessionResponse:
+```
+
+Create a session response for Wristband frontend SDKs. Extracts `tenant_id` and `user_id` from the session and returns them in the format expected by Wristband's frontend SDKs. Optionally includes custom metadata.
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+| --------- | ---- | -------- | ----------- |
+| request | `HttpRequest` | Yes | Django HttpRequest with session middleware enabled. |
+| metadata | `Optional[Dict[str, Any]]` | No | Custom metadata to include (must be JSON-serializable). Defaults to empty dict if not provided. |
+
+**Returns:**
+
+`SessionResponse` - Class type with the following fields:
+
+| Field | Type | Description |
+| ----- | ---- | ----------- |
+| tenant_id | `str` | The ID of the tenant that the authenticated user belongs to. |
+| user_id | `str` | The ID of the user who authenticated. |
+| metadata | `Dict[str, Any]` | Any included custom session metadata. |
+
+**Raises:**
+
+| Exception | Condition |
+| --------- | --------- |
+| `RuntimeError` | If SessionMiddleware is not installed. |
+| `ValueError` | If `request` is None, or if `tenant_id` or `user_id` are missing from session. |
+
+**Example:**
+
+```python
+from django.http import HttpRequest, JsonResponse
+from django.views.decorators.http import require_GET
+from wristband.django_auth import get_session_response
+from your_app.wristband import wristband_auth
+
+@require_session
+@require_GET
+def session_endpoint(request: HttpRequest) -> JsonResponse:
+    """Session endpoint for Wristband frontend SDKs"""
+    session_data = get_session_response(request, metadata={'foo': 'bar'})
+    response = JsonResponse(session_data)
+    response['Cache-Control'] = 'no-store'
+    response['Pragma'] = 'no-cache'
+    return response
+```
+
+**Response format:**
+
+```json
+{
+  "tenantId": "tenant_abc123",
+  "userId": "user_xyz789",
+  "metadata": {
+    "foo": "bar"
+  }
+}
+```
+
+#### get_token_response()
+
+```python
+def get_token_response(request: HttpRequest) -> TokenResponse:
+```
+
+Create a token response for Wristband frontend SDKs. Extracts `access_token` and `expires_at` from the session and returns them in the format expected by Wristband's frontend SDKs.
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+| --------- | ---- | -------- | ----------- |
+| request | `HttpRequest` | Yes | Django HttpRequest with session middleware enabled. |
+
+**Returns:**
+
+`TokenResponse` - Class type with the following fields:
+
+| Field | Type | Description |
+| ----- | ---- | ----------- |
+| access_token | `str` | The access token that can be used for accessing Wristband APIs as well as protecting your application's backend APIs. |
+| expires_at | `int` | The absolute expiration time of the access token in milliseconds since the Unix epoch. The `token_expiration_buffer` SDK configuration is accounted for in this value. |
+
+**Raises:**
+
+| Exception | Condition |
+| --------- | --------- |
+| `RuntimeError` | If SessionMiddleware is not installed. |
+| `ValueError` | If `request` is None, or if `access_token` or `expires_at` are missing from session. |
+
+**Example:**
+
+```python
+from django.http import HttpRequest, JsonResponse
+from django.views.decorators.http import require_GET
+from wristband.django_auth import get_token_response
+from your_app.wristband import wristband_auth
+
+@require_session
+@require_GET
+def token_endpoint(request: HttpRequest) -> JsonResponse:
+    """Token endpoint for frontend access token retrieval"""
+    token_data = get_token_response(request)
+    response = JsonResponse(token_data)
+    response['Cache-Control'] = 'no-store'
+    response['Pragma'] = 'no-cache'
+    return response
+```
+
+**Response format:**
+
+```json
+{
+  "accessToken": "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "expiresAt": 1735689600000
+}
+```
+
+<br>
+
+## Authentication Strategies
+
+The SDK provides factory methods to create authentication protection for your Django views. These methods support session-based authentication, JWT bearer token authentication, and multi-strategy authentication (combining both). Each factory method creates decorators for function-based views, mixins for class-based views, or DRF authentication classes.
+
+<br>
+
+### Available Authentication Strategies
+
+The SDK supports two authentication strategies that can be used individually or combined:
+
+| Strategy | Value | Description |
+| -------- | ----- | ----------- |
+| `AuthStrategy.SESSION` | `"session"` | Validates authentication using Django session data containing Wristband tokens. Automatically refreshes expired access tokens using the refresh token (only if `refresh_token` and `expires_at` exist in session). Refreshes CSRF cookie expiration time if Django's `CsrfViewMiddleware` is enabled (implements rolling sessions). |
+| `AuthStrategy.JWT` | `"jwt"` | Validates authentication using a Wristband JWT bearer token from the Authorization header. Does not use sessions or refresh tokens. Verifies token signature using JWKS from Wristband and validates claims. |
+
+Multiple strategies can be used together, tried in order until one succeeds (e.g., try `SESSION` first, then fall back to `JWT`).
+
+<br>
+
+### Unauthenticated Request Behavior
+
+When authentication fails, the SDK can respond in two ways:
+
+| Behavior | Value | Description |
+| -------- | ----- | ----------- |
+| `UnauthenticatedBehavior.REDIRECT` | `"redirect"` | Redirects unauthenticated users to the login URL (configured in your Wristband SDK settings). Appropriate for browser-based page views where users can be redirected to a login page to authenticate. |
+| `UnauthenticatedBehavior.JSON` | `"json"` | Returns a 401 Unauthorized HTTP response. Appropriate for API endpoints where the client (e.g., AJAX, mobile app) expects HTTP status codes instead of HTML redirects. |
+
+<br>
+
+### create_auth_decorator()
+
+```python
+def create_auth_decorator(
+    self,
+    strategies: List[AuthStrategy],
+    on_unauthenticated: UnauthenticatedBehavior = UnauthenticatedBehavior.JSON,
+    jwt_config: Optional[JWTAuthConfig] = None
+) -> Callable:
+```
+
+Creates a reusable decorator for protecting function-based views with authentication. Supports session-based authentication, JWT bearer token authentication, or both.
+
+**Parameters:**
+
+| Parameter | Type | Required | Default | Description |
+| --------- | ---- | -------- | ------- | ----------- |
+| strategies | List[`AuthStrategy`] | Yes | N/A | Authentication strategies to try in order. Available: `AuthStrategy.SESSION`, `AuthStrategy.JWT` |
+| on_unauthenticated | `UnauthenticatedBehavior` | No | `UnauthenticatedBehavior.JSON` | How to handle unauthenticated requests. `REDIRECT` redirects to login URL, `JSON` returns HTTP 401 response. |
+| jwt_config | `JWTAuthConfig` | No | `None` | Configuration for JWT authentication. Only used when `AuthStrategy.JWT` is included. |
+
+**JWTAuthConfig:**
+
+| Field | Type | Default | Description |
+| ----- | ---- | ------- | ----------- |
+| `jwks_cache_max_size` | `int` | `20` | Maximum number of JWKs to cache in memory. |
+| `jwks_cache_ttl` | `int` | `None` (infinite) | Time-to-live for cached JWKs in seconds. |
+
+**Authentication Flow:**
+
+When applied to a view, the decorator tries each authentication strategy in order:
+
+1. For `AuthStrategy.SESSION`:
+   - Verifies the session exists and user is authenticated
+   - Checks if access token expired and refreshes if necessary (only if `refresh_token` and `expires_at` are in the session)
+   - Updates the session with new token data if a refresh occurs
+   - Refreshes the CSRF token for rolling session behavior (only if Django's `CsrfViewMiddleware` is enabled)
+   - Saves session to persist changes (implements rolling sessions)
+
+2. For `AuthStrategy.JWT`:
+   - Extracts JWT from `Authorization: Bearer <token>` header
+   - Verifies signature using JWKS from Wristband
+   - Validates claims (expiration, issuer, etc.)
+   - Stores the raw JWT string on the request at `request.auth.jwt`
+   - Stores decoded JWT payload on the request at `request.auth.payload`
+
+3. If all strategies fail, redirects to the Login Endpoint or returns a 401 based on `on_unauthenticated`
+
+**Session Authentication Example:**
+
+```python
+# your_app/wristband.py
+from wristband.django_auth import (
+    AuthConfig,
+    AuthStrategy,
+    UnauthenticatedBehavior,
+    WristbandAuth,
+)
+
+wristband_auth = WristbandAuth(AuthConfig(**settings.WRISTBAND_AUTH))
+
+require_session = wristband_auth.create_auth_decorator(
+    strategies=[AuthStrategy.SESSION],
+    on_unauthenticated=UnauthenticatedBehavior.REDIRECT,
+)
+
+__all__ = ['wristband_auth', 'require_session']
+```
+
+```python
+# your_app/views.py
+from django.shortcuts import render
+from your_app.wristband import require_session
+
+@require_session
+def dashboard(request):
+    return render(request, 'dashboard.html', {
+        'user_id': request.session['user_id']
+    })
+```
+
+**JWT Authentication Example:**
+
+```python
+# your_app/wristband.py
+from wristband.django_auth import (
+    AuthConfig,
+    AuthStrategy,
+    JWTAuthConfig,
+    UnauthenticatedBehavior,
+    WristbandAuth,
+)
+
+wristband_auth = WristbandAuth(AuthConfig(**settings.WRISTBAND_AUTH))
+
+require_jwt = wristband_auth.create_auth_decorator(
+    strategies=[AuthStrategy.JWT],
+    on_unauthenticated=UnauthenticatedBehavior.JSON,
+    jwt_config=JWTAuthConfig(jwks_cache_max_size=50, jwks_cache_ttl=3600)
+)
+
+__all__ = ['wristband_auth', 'require_jwt']
+```
+
+```python
+# your_app/views.py
+from django.http import JsonResponse
+from your_app.wristband import require_jwt
+
+@require_jwt
+def api_endpoint(request):
+    # JWT validated and available in request.auth
+    user_id = request.auth.payload.sub
+    access_token = request.auth.jwt
+    
+    return JsonResponse({'user_id': user_id})
+```
+
+**Multi-Strategy Authentication Example:**
+
+```python
+# your_app/wristband.py
+from wristband.django_auth import (
+    AuthConfig,    
+    AuthStrategy,
+    JWTAuthConfig,
+    UnauthenticatedBehavior,
+    WristbandAuth,
+)
+
+wristband_auth = WristbandAuth(AuthConfig(**settings.WRISTBAND_AUTH))
+
+# Try session first, fall back to JWT
+require_auth = wristband_auth.create_auth_decorator(
+    strategies=[AuthStrategy.SESSION, AuthStrategy.JWT],
+    on_unauthenticated=UnauthenticatedBehavior.JSON,
+)
+
+__all__ = ['wristband_auth', 'require_auth']
+```
+
+```python
+from django.http import JsonResponse
+from wristband.django_auth import AuthStrategy
+from your_app.wristband import require_auth
+
+@require_auth
+def flexible_api(request):
+    if hasattr(request, 'auth'):
+        # JWT strategy succeeded
+        user_id = request.auth.payload.sub
+        auth_method = AuthStrategy.JWT
+    else:
+        # Session strategy succeeded
+        user_id = request.session['user_id']
+        auth_method = AuthStrategy.SESSION
+
+    return JsonResponse({
+        'user_id': user_id,
+        'auth_method': auth_method
+    })
+```
+
+<br>
+
+### create_auth_mixin()
+
+```python
+def create_auth_mixin(
+    self,
+    strategies: List[AuthStrategy],
+    on_unauthenticated: UnauthenticatedBehavior = UnauthenticatedBehavior.JSON,
+    jwt_config: Optional[JWTAuthConfig] = None
+) -> Type[WristbandAuthMixin]:
+```
+
+Creates a reusable mixin class for protecting class-based views with authentication. Takes the same parameters and performs the same authentication flow as `create_auth_decorator()`.
+
+**Session Authentication Example:**
+
+```python
+# your_app/wristband.py
+from wristband.django_auth import (
+    AuthConfig,
+    AuthStrategy,
+    UnauthenticatedBehavior,
+    WristbandAuth,
+)
+
+wristband_auth = WristbandAuth(AuthConfig(**settings.WRISTBAND_AUTH))
+
+SessionRequiredMixin = wristband_auth.create_auth_mixin(
+    strategies=[AuthStrategy.SESSION],
+    on_unauthenticated=UnauthenticatedBehavior.REDIRECT,
+)
+
+__all__ = ['wristband_auth', 'SessionRequiredMixin']
+```
+
+```python
+# your_app/views.py
+from django.views import View
+from django.shortcuts import render
+from your_app.wristband import SessionRequiredMixin
+
+class DashboardView(SessionRequiredMixin, View):
+    def get(self, request):
+        return render(request, 'dashboard.html', {
+            'user_id': request.session['user_id']
+        })
+```
+
+**JWT Authentication Example:**
+
+```python
+# your_app/wristband.py
+from wristband.django_auth import (
+    AuthConfig,
+    AuthStrategy,
+    JWTAuthConfig,
+    UnauthenticatedBehavior,
+    WristbandAuth,
+)
+
+wristband_auth = WristbandAuth(AuthConfig(**settings.WRISTBAND_AUTH))
+
+JwtRequiredMixin = wristband_auth.create_auth_mixin(
+    strategies=[AuthStrategy.JWT],
+    on_unauthenticated=UnauthenticatedBehavior.JSON,
+    jwt_config=JWTAuthConfig(jwks_cache_max_size=50, jwks_cache_ttl=3600)
+)
+
+__all__ = ['wristband_auth', 'JwtRequiredMixin']
+```
+
+```python
+# your_app/views.py
+from django.http import JsonResponse
+from django.views import View
+from your_app.wristband import JwtRequiredMixin
+
+class ApiView(JwtRequiredMixin, View):
+    def get(self, request):
+        access_token = request.auth.jwt
+        user_id = request.auth.payload.sub
+
+        return JsonResponse({'user_id': user_id})
+```
+
+> **Note:** The mixin must be the leftmost class in the inheritance chain to ensure authentication is checked before any other view logic executes.
+
+<br>
+
+### create_drf_session_auth()
+
+```python
+def create_drf_session_auth(self) -> Type[WristbandDrfSessionAuth]:
+```
+
+Creates a DRF authentication class for session-based authentication. Use this with Django REST Framework's `authentication_classes` and `IsAuthenticated` permission.
+
+This DRF authentication class focuses solely on session auth and does not include strategy selection or custom unauthenticated behavior, since DRF supports multi-strategy handling and always returns JSON 401 responses for API-first applications.
+
+> **Note:** Requires `djangorestframework>=3.15.0`. Install with `pip install wristband-django-auth[drf]`.
+
+**Example:**
+
+```python
+# your_app/wristband.py
+from wristband.django_auth import AuthConfig, WristbandAuth
+
+wristband_auth = WristbandAuth(AuthConfig(**settings.WRISTBAND_AUTH))
+
+DrfSessionAuth = wristband_auth.create_drf_session_auth()
+
+__all__ = ['wristband_auth', 'DrfSessionAuth']
+```
+
+```python
+# your_app/views.py
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework.permissions import IsAuthenticated
+from your_app.wristband import DrfSessionAuth
+
+class ProfileAPIView(APIView):
+    authentication_classes = [DrfSessionAuth]
+    permission_classes = [IsAuthenticated]
+    
+    def get(self, request):
+        return Response({
+            'user_id': request.session['user_id'],
+            'email': request.session['email']
+        })
+```
+
+<br>
+
+### create_drf_jwt_auth()
+
+```python
+def create_drf_jwt_auth(
+    self,
+    jwt_config: Optional[JWTAuthConfig] = None
+) -> Type[WristbandDrfJwtAuth]:
+```
+
+Creates a DRF authentication class for JWT bearer token authentication. Use this with Django REST Framework's `authentication_classes` and `IsAuthenticated` permission.
+
+This DRF authentication class focuses solely on JWT auth and does not include strategy selection or custom unauthenticated behavior, since DRF supports multi-strategy handling and always returns JSON 401 responses for API-first applications.
+
+> **Note:** Requires `djangorestframework>=3.15.0`. Install with `pip install wristband-django-auth[drf]`.
+
+**Parameters:**
+
+| Parameter | Type | Required | Default | Description |
+| --------- | ---- | -------- | ------- | ----------- |
+| jwt_config | `JWTAuthConfig` | No | `None` | Configuration for JWT authentication. |
+
+**Example:**
+
+```python
+# your_app/wristband.py
+from wristband.django_auth import AuthConfig, JWTAuthConfig, WristbandAuth
+
+wristband_auth = WristbandAuth(AuthConfig(**settings.WRISTBAND_AUTH))
+
+DrfJwtAuth = wristband_auth.create_drf_jwt_auth(
+    jwt_config=JWTAuthConfig(jwks_cache_max_size=50, jwks_cache_ttl=3600)
+)
+
+__all__ = ['wristband_auth', 'DrfJwtAuth']
+```
+
+```python
+# your_app/views.py
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework.permissions import IsAuthenticated
+from your_app.wristband import DrfJwtAuth
+
+class ApiEndpoint(APIView):
+    authentication_classes = [DrfJwtAuth]
+    permission_classes = [IsAuthenticated]
+    
+    def get(self, request):
+        access_token = request.auth.jwt
+        user_id = request.auth.payload.sub
+        return Response({'user_id': user_id})
+```
+
+<br>
+
+### Multi-Strategy Authentication with DRF
+
+Unlike Django's traditional decorators and mixins, Django REST Framework natively supports multiple authentication strategies through its `authentication_classes` list. To combine session and JWT authentication, simply include both authentication classes:
+
+```python
+# your_app/wristband.py
+from wristband.django_auth import AuthConfig, WristbandAuth
+
+wristband_auth = WristbandAuth(AuthConfig(**settings.WRISTBAND_AUTH))
+
+DrfSessionAuth = wristband_auth.create_drf_session_auth()
+DrfJwtAuth = wristband_auth.create_drf_jwt_auth()
+
+__all__ = ['wristband_auth', 'DrfSessionAuth', 'DrfJwtAuth']
+```
+
+```python
+# your_app/views.py
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework.permissions import IsAuthenticated
+from your_app.wristband import DrfSessionAuth, DrfJwtAuth
+
+class FlexibleAPIView(APIView):
+    # DRF tries session auth first, then JWT - first success wins
+    authentication_classes = [DrfSessionAuth, DrfJwtAuth]
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        # Check which strategy succeeded
+        if hasattr(request, 'auth'):
+            # JWT authentication succeeded
+            user_id = request.auth.payload.sub
+        else:
+            # Session authentication succeeded
+            user_id = request.session['user_id']
+        
+        return Response({'user_id': user_id})
+```
+
+<br>
+
+### JWT Authentication Details
+
+When using JWT authentication (via `AuthStrategy.JWT`), the decoded JWT data is stored in `request.auth` as a `JWTAuthResult` object:
+
+**JWTAuthResult:**
+
+| Field | Type | Description |
+| ----- | ---- | ----------- |
+| `jwt` | `str` | The raw JWT token string from the Authorization header. |
+| `payload` | `JWTPayload` | The decoded and validated JWT payload containing claims. |
+
+**JWTPayload:**
+
+The JWT payload follows [OpenID Connect standard claims](https://openid.net/specs/openid-connect-core-1_0.html#StandardClaims). Common claims include:
+
+| Field | Type | Description |
+| ----- | ---- | ----------- |
+| `sub` | `Optional[str]` | Subject - unique identifier for the user. |
+| `iss` | `Optional[str]` | Issuer - URL of the identity provider. |
+| `aud` | `Optional[str]` or `Optional[List[str]]` | Audience - intended recipient(s) of the token. |
+| `exp` | `Optional[int]` | Expiration time - time after which JWT must not be accepted (Unix timestamp). |
+| `nbf` | `Optional[int]` | Not before - time before which JWT must not be accepted (Unix timestamp). |
+| `iat` | `Optional[int]` | Issued at - time when the JWT was issued (Unix timestamp). |
+| `jti` | `Optional[str]` | JWT ID - unique identifier for the JWT. |
+| `email` | `Optional[str]` | User's email address (if `email` scope requested). |
+| `email_verified` | `Optional[bool]` | Whether email is verified (if `email` scope requested). |
+
+> **Note:** All standard JWT claims are optional. Additional custom claims may be present based on requested scopes and Wristband configuration. Access any claim using `payload.get('claim_name')` or dict-like syntax `payload['claim_name']`.
+
+**Accessing JWT Data:**
+
+```python
+# Function-based view
+@require_jwt
+def api_view(request):
+    # Raw token for downstream API calls
+    token = request.auth.jwt
+    
+    # Decoded claims
+    user_id = request.auth.payload.sub
+    email = request.auth.payload.email
+    exp_time = request.auth.payload.exp
+    
+    return JsonResponse({
+        'user_id': user_id,
+        'email': email
+    })
+```
+
+```python
+# Class-based view
+class ApiView(JwtRequiredMixin, View):
+    def get(self, request):
+        user_id = request.auth.payload.sub
+        return JsonResponse({'user_id': user_id})
+```
+
+```python
+# DRF view
+class DRFApiView(APIView):
+    authentication_classes = [DrfJwtAuth]
+    permission_classes = [IsAuthenticated]
+    
+    def get(self, request):
+        user_id = request.auth.payload.sub
+        return Response({'user_id': user_id})
+```
+
+<br>
+
+### Choosing the Right Strategy
+
+**Use Session Authentication When:**
+- Building traditional Django web applications with server-rendered templates
+- Users log in through your application's UI
+- You want automatic CSRF protection
+- You need rolling session expiration
+
+**Use JWT Authentication When:**
+- Building API-first applications
+- Developing mobile apps or SPAs that store tokens client-side
+- Microservices need to validate tokens independently
+- You want stateless authentication
+
+**Use Multi-Strategy Authentication When:**
+- Supporting both web and API clients in the same application
+- Gradually migrating from session to JWT authentication
+- Building a hybrid application with both traditional and modern frontends
+
+<br>
+
+## Debug Logging
+
+The SDK includes some debug-level logging for troubleshooting authentication issues. To enable debug logs in your Django application, configure the logger for the Wristband SDK in your Django settings.
+
+> **⚠️ Production Warning**
+>
+> Debug logging can potentially expose sensitive information in logs. Always set the Wristband logger level to `INFO` or `WARNING` in production environments.
+
+```python
+# your_project/settings.py
+
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'handlers': {
+        'console': {
+            'class': 'logging.StreamHandler',
+        },
+    },
+    'root': {
+        'handlers': ['console'],
+        'level': 'INFO',
+    },
+    'loggers': {
+        # Set Wristband to DEBUG level.
+        'wristband': {
+            'handlers': ['console'],
+            'level': 'DEBUG',
+            'propagate': False,
+        },
+    },
+}
+```
+
+<br>
+
+## Related Wristband SDKs
+
+This SDK builds upon and integrates with other Wristband SDKs to provide a complete authentication solution:
+
+**[@wristband/python-jwt](https://github.com/wristband-dev/python-jwt)**
+
+This SDK leverages the Wristband Python JWT SDK for JWT validation when using JWT authentication strategies. It handles JWT signature verification, token parsing, and JWKS key management. The JWT SDK functions are also re-exported from this package, allowing you to use them directly for custom JWT validation scenarios beyond the built-in authentication dependencies. Refer to that GitHub repository for more information on JWT validation configuration and options.
 
 <br>
 

@@ -4,14 +4,14 @@ from urllib.parse import ParseResult, parse_qs, urlparse
 
 from django.http import HttpResponse
 
+from wristband.django_auth.data_encryptor import DataEncryptor
 from wristband.django_auth.models import LoginState
-from wristband.django_auth.utils import SessionEncryptor
 
 # Shared test secret
 test_login_state_secret = "this_is_a_very_long_secret_key_for_testing_purposes_123456789"
 
 # Singleton encryptor instance (use a real secret from your settings or env)
-_login_state_encryptor = SessionEncryptor(test_login_state_secret)
+_login_state_encryptor = DataEncryptor(test_login_state_secret)
 
 
 def assert_redirect_no_cache(
