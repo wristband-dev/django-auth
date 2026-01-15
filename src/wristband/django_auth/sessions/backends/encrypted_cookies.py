@@ -5,7 +5,7 @@ This session backend stores session data in encrypted cookies using Fernet (AES-
 It supports key rotation by accepting up to 3 secret keys.
 
 Configuration:
-    SESSION_ENGINE = 'wristband.django_auth.backends.encrypted_cookie_sessions'
+    SESSION_ENGINE = 'wristband.django_auth.sessions.backends.encrypted_cookies'
     WRISTBAND_SESSION_SECRET = 'your-32-char-secret'  # or list for key rotation
 
     # Falls back to Django's SECRET_KEY if WRISTBAND_SESSION_SECRET not provided
@@ -26,7 +26,7 @@ from typing import Any, Dict, Optional
 from django.conf import settings
 from django.contrib.sessions.backends.base import SessionBase
 
-from ..data_encryptor import DataEncryptor
+from ...data_encryptor import DataEncryptor
 
 
 class SessionStore(SessionBase):

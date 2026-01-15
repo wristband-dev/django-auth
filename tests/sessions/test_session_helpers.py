@@ -464,3 +464,54 @@ class TestSessionIntegration:
 
         assert token1.access_token == token2.access_token
         assert token1.expires_at == token2.expires_at
+
+
+class TestSessionFromCallbackValidation:
+    """Test validation logic in session_from_callback()."""
+
+    def test_session_from_callback_raises_on_none_request(self, callback_data_full):
+        """Test that ValueError is raised when request is None."""
+        with pytest.raises(ValueError, match="request is required"):
+            session_from_callback(None, callback_data_full)  # type: ignore[arg-type]
+
+    def test_session_from_callback_raises_on_missing_session_middleware(self, callback_data_full):
+        """Test that RuntimeError is raised when SessionMiddleware is not installed."""
+        request = Mock(spec=HttpRequest)
+        # Don't attach a session attribute
+        
+        with pytest.raises(RuntimeError, match="Session not found. Ensure SessionMiddleware is registered"):
+            session_from_callback(request, callback_data_full)
+
+
+class TestGetSessionResponseValidation:
+    """Test validation logic in get_session_response()."""
+
+    def test_get_session_response_raises_on_none_request(self):
+        """Test that ValueError is raised when request is None."""
+        with pytest.raises(ValueError, match="request is required"):
+            get_session_response(None)  # type: ignore[arg-type]
+
+    def test_get_session_response_raises_on_missing_session_middleware(self):
+        """Test that RuntimeError is raised when SessionMiddleware is not installed."""
+        request = Mock(spec=HttpRequest)
+        # Don't attach a session attribute
+        
+        with pytest.raises(RuntimeError, match="Session not found. Ensure SessionMiddleware is registered"):
+            get_session_response(request)
+
+
+class TestGetTokenResponseValidation:
+    """Test validation logic in get_token_response()."""
+
+    def test_get_token_response_raises_on_none_request(self):
+        """Test that ValueError is raised when request is None."""
+        with pytest.raises(ValueError, match="request is required"):
+            get_token_response(None)  # type: ignore[arg-type]
+
+    def test_get_token_response_raises_on_missing_session_middleware(self):
+        """Test that RuntimeError is raised when SessionMiddleware is not installed."""
+        request = Mock(spec=HttpRequest)
+        # Don't attach a session attribute
+        
+        with pytest.raises(RuntimeError, match="Session not found. Ensure SessionMiddleware is registered"):
+            get_token_response(request)

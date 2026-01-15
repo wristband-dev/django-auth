@@ -379,7 +379,7 @@ class WristbandAuth:
                 self._wristband_api.revoke_refresh_token(config.refresh_token)
             except Exception as e:
                 # No need to block logout execution if revoking fails
-                _logger.warning(f"Revoking refresh token failed during logout: {e}")
+                _logger.debug(f"Revoking refresh token failed during logout: {e}")
 
         if config.state and len(config.state) > 512:
             raise ValueError("The [state] logout config cannot exceed 512 characters.")
