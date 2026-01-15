@@ -478,7 +478,7 @@ class TestSessionFromCallbackValidation:
         """Test that RuntimeError is raised when SessionMiddleware is not installed."""
         request = Mock(spec=HttpRequest)
         # Don't attach a session attribute
-        
+
         with pytest.raises(RuntimeError, match="Session not found. Ensure SessionMiddleware is registered"):
             session_from_callback(request, callback_data_full)
 
@@ -495,7 +495,7 @@ class TestGetSessionResponseValidation:
         """Test that RuntimeError is raised when SessionMiddleware is not installed."""
         request = Mock(spec=HttpRequest)
         # Don't attach a session attribute
-        
+
         with pytest.raises(RuntimeError, match="Session not found. Ensure SessionMiddleware is registered"):
             get_session_response(request)
 
@@ -512,6 +512,6 @@ class TestGetTokenResponseValidation:
         """Test that RuntimeError is raised when SessionMiddleware is not installed."""
         request = Mock(spec=HttpRequest)
         # Don't attach a session attribute
-        
+
         with pytest.raises(RuntimeError, match="Session not found. Ensure SessionMiddleware is registered"):
             get_token_response(request)

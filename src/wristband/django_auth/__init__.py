@@ -23,10 +23,10 @@ from .models import (
     WristbandDrfSessionAuth,
 )
 from .sessions.session_helpers import (
+    WristbandSessionData,
     get_session_response,
     get_token_response,
     session_from_callback,
-    WristbandSessionData,
 )
 
 __all__ = [
