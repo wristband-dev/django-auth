@@ -1,32 +1,61 @@
 from .auth import WristbandAuth
-from .decorators import wristband_auth_required
+from .backends.auth.wristband_auth_backend import DefaultWristbandAuthBackendAdapter, WristbandAuthBackend
 from .exceptions import WristbandError
-from .mixins import WristbandAuthRequiredMixin
 from .models import (
     AuthConfig,
+    AuthStrategy,
     CallbackData,
+    CallbackFailureReason,
     CallbackResult,
     CallbackResultType,
+    CompletedCallbackResult,
+    JWTAuthConfig,
+    JWTAuthResult,
     LoginConfig,
     LogoutConfig,
+    RedirectRequiredCallbackResult,
     TokenData,
+    UnauthenticatedBehavior,
     UserInfo,
+    UserInfoRole,
+    WristbandAuthMixin,
+    WristbandDrfJwtAuth,
+    WristbandDrfSessionAuth,
 )
-from .utils import SessionEncryptor, is_wristband_auth_required
+from .sessions.session_helpers import (
+    WristbandSessionData,
+    get_session_response,
+    get_token_response,
+    session_from_callback,
+)
 
 __all__ = [
     "AuthConfig",
+    "AuthStrategy",
     "CallbackData",
+    "CallbackFailureReason",
     "CallbackResult",
     "CallbackResultType",
-    "is_wristband_auth_required",
+    "CompletedCallbackResult",
+    "DefaultWristbandAuthBackendAdapter",
+    "JWTAuthConfig",
+    "JWTAuthResult",
     "LoginConfig",
     "LogoutConfig",
-    "SessionEncryptor",
+    "RedirectRequiredCallbackResult",
     "TokenData",
+    "UnauthenticatedBehavior",
     "UserInfo",
-    "wristband_auth_required",
+    "UserInfoRole",
     "WristbandAuth",
-    "WristbandAuthRequiredMixin",
+    "WristbandAuthBackend",
+    "WristbandAuthMixin",
     "WristbandError",
+    "WristbandDrfJwtAuth",
+    "WristbandDrfSessionAuth",
+    # sessions
+    "WristbandSessionData",
+    "get_session_response",
+    "get_token_response",
+    "session_from_callback",
 ]

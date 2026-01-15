@@ -1,35 +1,47 @@
 import base64
 import hashlib
 import logging
+import re
 import secrets
 import time
 from datetime import datetime
-from typing import Any, Literal, Optional, Union
+from functools import wraps
+from typing import Any, Callable, List, Literal, Optional, Tuple, Type, Union, cast
 from urllib.parse import quote, urlencode
 
 import httpx
-from django.http import HttpRequest, HttpResponse
+from django.conf import settings
+from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import redirect
 
 from .client import WristbandApiClient
 from .config_resolver import ConfigResolver
+from .data_encryptor import DataEncryptor
 from .exceptions import InvalidGrantError, WristbandError
 from .models import (
     AuthConfig,
+    AuthStrategy,
     CallbackData,
+    CallbackFailureReason,
     CallbackResult,
-    CallbackResultType,
+    CompletedCallbackResult,
+    JWTAuthConfig,
+    JWTAuthResult,
     LoginConfig,
     LoginState,
     LogoutConfig,
     OAuthAuthorizeUrlConfig,
+    RedirectRequiredCallbackResult,
     TokenData,
-    TokenResponse,
+    UnauthenticatedBehavior,
     UserInfo,
+    WristbandAuthMixin,
+    WristbandDrfJwtAuth,
+    WristbandDrfSessionAuth,
+    WristbandTokenResponse,
 )
-from .utils import SessionEncryptor
 
-logger = logging.getLogger(__name__)
+_logger = logging.getLogger(__name__)
 
 
 class WristbandAuth:
@@ -46,7 +58,7 @@ class WristbandAuth:
     _login_state_cookie_prefix: str = "login#"
     _login_state_cookie_separator: str = "#"
     _return_url_char_max_len = 450
-    _tenant_domain_token: str = "{tenant_domain}"
+    _tenant_placeholder_pattern = re.compile(r"\{tenant_(?:domain|name)\}")
     _token_refresh_retries = 2
     _token_refresh_retry_timeout = 0.1  # 100ms
 
@@ -57,7 +69,7 @@ class WristbandAuth:
             client_id=self._config_resolver.get_client_id(),
             client_secret=self._config_resolver.get_client_secret(),
         )
-        self._login_state_encryptor = SessionEncryptor(secret_key=self._config_resolver.get_login_state_secret())
+        self._login_state_encryptor = DataEncryptor(secret_key=self._config_resolver.get_login_state_secret())
 
     #################################
     #  DISCOVER
@@ -92,13 +104,13 @@ class WristbandAuth:
         - return_url: The URL to redirect the user to after authentication.
         - tenant_custom_domain: The tenant-specific custom domain, if applicable. Used as the domain
           for the Authorize URL when present.
-        - tenant_domain: The tenant's domain name. Used as a subdomain or vanity domain in the
+        - tenant_name: The tenant's name. Used as a subdomain or vanity domain in the
           Authorize URL if not using tenant custom domains.
 
         Args:
             req (Request): The HTTP request object.
             config (LoginConfig, optional): Additional configuration for the login request,
-                including default tenant domain and custom state.
+                including default tenant name and custom state.
 
         Returns:
             Response: An HTTP Response object that redirects the user to the Wristband
@@ -116,22 +128,15 @@ class WristbandAuth:
         wristband_application_vanity_domain = self._config_resolver.get_wristband_application_vanity_domain()
 
         # Determine tenant domain
-        tenant_domain_name = self._resolve_tenant_domain_name(request, parse_tenant_from_root_domain)
+        tenant_name = self._resolve_tenant_name(request, parse_tenant_from_root_domain)
         tenant_custom_domain = self._resolve_tenant_custom_domain_param(request)
         default_tenant_custom_domain: Optional[str] = config.default_tenant_custom_domain
-        default_tenant_domain_name: Optional[str] = config.default_tenant_domain
+        default_tenant_name: Optional[str] = config.default_tenant_name
 
         resovled_return_url: Optional[str] = self._resolve_return_url(request, config.return_url)
 
         # In the event we cannot determine either a tenant custom domain or subdomain, send the user to app-level login.
-        if not any(
-            [
-                tenant_custom_domain,
-                tenant_domain_name,
-                default_tenant_custom_domain,
-                default_tenant_domain_name,
-            ]
-        ):
+        if not any([tenant_custom_domain, tenant_name, default_tenant_custom_domain, default_tenant_name]):
             app_login_url = custom_application_login_page_url or f"https://{wristband_application_vanity_domain}/login"
             state_param = f"&state={quote(resovled_return_url)}" if resovled_return_url else ""
             response = redirect(f"{app_login_url}?client_id={client_id}{state_param}")
@@ -152,9 +157,9 @@ class WristbandAuth:
                 scopes=scopes,
                 state=login_state.state,
                 default_tenant_custom_domain=default_tenant_custom_domain,
-                default_tenant_domain_name=default_tenant_domain_name,
+                default_tenant_name=default_tenant_name,
                 tenant_custom_domain=tenant_custom_domain,
-                tenant_domain_name=tenant_domain_name,
+                tenant_name=tenant_name,
                 is_application_custom_domain_active=is_application_custom_domain_active,
                 wristband_application_vanity_domain=wristband_application_vanity_domain,
             ),
@@ -190,15 +195,23 @@ class WristbandAuth:
         - state: The original state value sent during the authorization request, used to validate the response.
         - tenant_custom_domain: The tenant's custom domain, if defined. If a redirect to the Login Endpoint
           is needed, this value should be passed along in the redirect.
-        - tenant_domain: The tenant's domain name. Used when redirecting to the Login Endpoint in setups
+        - tenant_name: The tenant's name. Used when redirecting to the Login Endpoint in setups
           that don't rely on tenant subdomains or custom domains.
 
         Args:
-            req (Request): The HTTP request object containing the callback query parameters.
+            request (Request): The HTTP request object containing the callback query parameters.
 
         Returns:
-            CallbackResult: An object representing the outcome of the callback process,
-            including login state, user info, or redirect behavior.
+            CallbackResult: A union type representing the outcome of the callback process:
+                - CompletedCallbackResult: Contains callback_data for creating an authenticated session.
+                - RedirectRequiredCallbackResult: Contains redirect_url and reason when callback fails
+                  and requires redirecting to login to retry authentication.
+
+            Use isinstance() to determine which result type was returned:
+                if isinstance(result, CompletedCallbackResult):
+                    # Success - use result.callback_data
+                elif isinstance(result, RedirectRequiredCallbackResult):
+                    # Failure - redirect to result.redirect_url
         """
 
         # Fetch our SDK configs
@@ -216,32 +229,30 @@ class WristbandAuth:
         if not param_state:
             raise TypeError("Invalid query parameter [state] passed from Wristband during callback")
 
-        # Resolve and validate tenant domain name
-        resolved_tenant_domain_name = self._resolve_tenant_domain_name(request, parse_tenant_from_root_domain)
-        if not resolved_tenant_domain_name:
+        # Resolve and validate tenant name
+        resolved_tenant_name = self._resolve_tenant_name(request, parse_tenant_from_root_domain)
+        if not resolved_tenant_name:
             if parse_tenant_from_root_domain:
                 raise WristbandError("missing_tenant_subdomain", "Callback request URL is missing a tenant subdomain")
             else:
-                raise WristbandError("missing_tenant_domain", "Callback request is missing the [tenant_domain] param")
+                raise WristbandError("missing_tenant_name", "Callback request is missing the [tenant_name] param")
 
         # Build the tenant login URL in case we need to redirect
         tenant_login_url = self._build_tenant_login_url(
             login_url=login_url,
-            tenant_domain=resolved_tenant_domain_name,
+            tenant_name=resolved_tenant_name,
             tenant_custom_domain=tenant_custom_domain_param,
             parse_tenant_from_root_domain=parse_tenant_from_root_domain,
-        )
-        redirect_required_result = CallbackResult(
-            type=CallbackResultType.REDIRECT_REQUIRED,
-            callback_data=None,
-            redirect_url=tenant_login_url,
         )
 
         # Check if Wristband gave an error
         if error:
             # If we specifically got a 'login_required' error, go back to the login
             if error.lower() == "login_required":
-                return redirect_required_result
+                return RedirectRequiredCallbackResult(
+                    redirect_url=tenant_login_url,
+                    reason=CallbackFailureReason.LOGIN_REQUIRED,
+                )
             raise WristbandError(error, error_description or "")
 
         # Retrieve and decrypt the login state cookie
@@ -249,13 +260,19 @@ class WristbandAuth:
 
         # No valid cookie, we cannot verify the request
         if not login_state_cookie_val:
-            return redirect_required_result
+            return RedirectRequiredCallbackResult(
+                redirect_url=tenant_login_url,
+                reason=CallbackFailureReason.MISSING_LOGIN_STATE,
+            )
 
         login_state = self._decrypt_login_state(login_state_cookie_val)
 
         # Validate the state from the cookie matches the incoming state param
         if param_state != login_state.state:
-            return redirect_required_result
+            return RedirectRequiredCallbackResult(
+                redirect_url=tenant_login_url,
+                reason=CallbackFailureReason.INVALID_LOGIN_STATE,
+            )
 
         # Safety check (should never happen)
         if not code:
@@ -263,7 +280,7 @@ class WristbandAuth:
 
         try:
             # Exchange code for tokens
-            token_response: TokenResponse = self._wristband_api.get_tokens(
+            token_response: WristbandTokenResponse = self._wristband_api.get_tokens(
                 code=code,
                 redirect_uri=login_state.redirect_uri,
                 code_verifier=login_state.code_verifier,
@@ -276,24 +293,25 @@ class WristbandAuth:
             expires_in = token_response.expires_in - (token_expiration_buffer or 0)
             expires_at = int((time.time() + expires_in) * 1000)
 
-            return CallbackResult(
-                type=CallbackResultType.COMPLETED,
-                redirect_url=None,
+            return CompletedCallbackResult(
                 callback_data=CallbackData(
                     access_token=token_response.access_token,
                     id_token=token_response.id_token,
                     expires_in=expires_in,
                     expires_at=expires_at,
-                    tenant_domain_name=resolved_tenant_domain_name,
+                    tenant_name=resolved_tenant_name,
                     user_info=userinfo,
                     custom_state=login_state.custom_state,
                     refresh_token=token_response.refresh_token,
                     return_url=login_state.return_url,
                     tenant_custom_domain=tenant_custom_domain_param,
-                ),
+                )
             )
         except InvalidGrantError:
-            return redirect_required_result
+            return RedirectRequiredCallbackResult(
+                redirect_url=tenant_login_url,
+                reason=CallbackFailureReason.INVALID_GRANT,
+            )
         except Exception as ex:
             raise ex
 
@@ -342,7 +360,7 @@ class WristbandAuth:
         Args:
             request (HttpRequest): The HTTP request object containing user session or token data.
             config (LogoutConfig, optional): Optional configuration parameters for the logout process,
-            such as a custom return URL or tenant domain.
+            such as a custom return URL or tenant name.
 
         Returns:
             Response: An HTTP redirect response to Wristband's Logout Endpoint.
@@ -361,13 +379,13 @@ class WristbandAuth:
                 self._wristband_api.revoke_refresh_token(config.refresh_token)
             except Exception as e:
                 # No need to block logout execution if revoking fails
-                logger.warning(f"Revoking refresh token failed during logout: {e}")
+                _logger.debug(f"Revoking refresh token failed during logout: {e}")
 
         if config.state and len(config.state) > 512:
             raise ValueError("The [state] logout config cannot exceed 512 characters.")
 
         # Get host and determine tenant domain
-        tenant_domain_name = self._resolve_tenant_domain_name(request, parse_tenant_from_root_domain)
+        tenant_name = self._resolve_tenant_name(request, parse_tenant_from_root_domain)
         tenant_custom_domain = self._resolve_tenant_custom_domain_param(request)
 
         # Build logout URL components
@@ -387,10 +405,10 @@ class WristbandAuth:
             response["Location"] = f"https://{config.tenant_custom_domain}{logout_path}"
             return response
 
-        # 2) If the LogoutConfig has a tenant domain defined, then use that.
-        if config.tenant_domain_name and config.tenant_domain_name.strip():
+        # 2) If the LogoutConfig has a tenant name defined, then use that.
+        if config.tenant_name and config.tenant_name.strip():
             response["Location"] = (
-                f"https://{config.tenant_domain_name}{separator}" f"{wristband_application_vanity_domain}{logout_path}"
+                f"https://{config.tenant_name}{separator}" f"{wristband_application_vanity_domain}{logout_path}"
             )
             return response
 
@@ -399,11 +417,11 @@ class WristbandAuth:
             response["Location"] = f"https://{tenant_custom_domain}{logout_path}"
             return response
 
-        # 4a) If tenant subdomains are enabled, get the tenant domain from the host.
-        # 4b) Otherwise, if tenant subdomains are not enabled, then look for it in the tenant_domain query param.
-        if tenant_domain_name and tenant_domain_name.strip():
+        # 4a) If tenant subdomains are enabled, get the tenant name from the host.
+        # 4b) Otherwise, if tenant subdomains are not enabled, then look for it in the tenant_name query param.
+        if tenant_name and tenant_name.strip():
             response["Location"] = (
-                f"https://{tenant_domain_name}{separator}" f"{wristband_application_vanity_domain}{logout_path}"
+                f"https://{tenant_name}{separator}" f"{wristband_application_vanity_domain}{logout_path}"
             )
             return response
 
@@ -416,13 +434,13 @@ class WristbandAuth:
     #  REFRESH TOKEN IF EXPIRED
     #################################
 
-    def refresh_token_if_expired(self, refresh_token: Optional[str], expires_at: Optional[int]) -> Optional[TokenData]:
+    def refresh_token_if_expired(self, refresh_token: str, expires_at: int) -> Optional[TokenData]:
         """
         Checks if the user's access token has expired and refreshes the token, if necessary.
 
         Args:
-          refresh_token (Optional[str]): The refresh token used to obtain a new access token.
-          expires_at (Optional[int]): Unix timestamp in milliseconds indicating when the current access token expires.
+          refresh_token (str): The refresh token used to obtain a new access token.
+          expires_at (int): Unix timestamp in milliseconds indicating when the current access token expires.
 
         Returns:
             TokenData | None: The refreshed token data if a new token was obtained, otherwise None.
@@ -443,7 +461,7 @@ class WristbandAuth:
         # Try up to 3 times to perform a token refresh
         for attempt in range(self._token_refresh_retries + 1):
             try:
-                token_response: TokenResponse = self._wristband_api.refresh_token(refresh_token)
+                token_response: WristbandTokenResponse = self._wristband_api.refresh_token(refresh_token)
 
                 # Calculate token expiry buffer
                 expires_in = token_response.expires_in - (token_expiration_buffer or 0)
@@ -485,24 +503,623 @@ class WristbandAuth:
         # Safety check that should never happen
         raise WristbandError("unexpected_error", "Unexpected Error")
 
+    #####################################################
+    #  CREATE AUTH DECORATOR
+    #####################################################
+
+    def create_auth_decorator(
+        self,
+        strategies: List[AuthStrategy],
+        on_unauthenticated: UnauthenticatedBehavior = UnauthenticatedBehavior.JSON,
+        jwt_config: Optional[JWTAuthConfig] = None,
+    ) -> Callable[[Callable[..., HttpResponse]], Callable[..., HttpResponse]]:
+        """
+        Create a decorator that enforces authentication with specified strategies.
+
+        This factory method creates a reusable decorator configured with your app's
+        default authentication behavior. The decorator tries each strategy in order
+        until one succeeds. Configuration is frozen at creation time. For different
+        auth requirements, call this factory multiple times.
+
+        Args:
+            strategies: List of auth strategies to try in order.
+            on_unauthenticated: What to do when user is not authenticated.
+            jwt_config: Optional JWT configuration (only used if AuthStrategy.JWT in strategies)
+
+        Returns:
+            A decorator function that can be applied to Django views
+
+        Example:
+            # Create multiple decorators with different configs
+            require_session = wristband_auth.create_auth_decorator(
+                strategies=[AuthStrategy.SESSION],
+                on_unauthenticated=UnauthenticatedBehavior.REDIRECT
+            )
+
+            require_jwt = wristband_auth.create_auth_decorator(
+                strategies=[AuthStrategy.JWT],
+                on_unauthenticated=UnauthenticatedBehavior.JSON
+            )
+
+            require_either = wristband_auth.create_auth_decorator(
+                strategies=[AuthStrategy.SESSION, AuthStrategy.JWT]
+            )
+
+            # Use them
+            @require_session
+            def dashboard(request):
+                return render(request, 'dashboard.html')
+
+            @csrf_exempt
+            @require_jwt
+            @require_POST
+            def api_endpoint(request):
+                return JsonResponse({'data': '...'})
+        """
+        if not strategies:
+            raise ValueError("At least one authentication strategy must be provided")
+
+        self._validate_auth_decorator_config(strategies, on_unauthenticated)
+
+        # Create validator once at decorator creation time if JWT strategy is used
+        jwt_validator = None
+        if AuthStrategy.JWT in strategies:
+            jwt_validator = self._create_jwt_validator(jwt_config)
+
+        def decorator(view_func: Callable[..., HttpResponse]) -> Callable[..., HttpResponse]:
+            return self._create_auth_wrapper(view_func, strategies, on_unauthenticated, jwt_validator)
+
+        return decorator
+
+    #####################################################
+    #  CBV AUTHENTICATION MIXIN FACTORY METHOD
+    #####################################################
+
+    def create_auth_mixin(
+        self,
+        strategies: List[AuthStrategy],
+        on_unauthenticated: UnauthenticatedBehavior = UnauthenticatedBehavior.REDIRECT,
+        jwt_config: Optional[JWTAuthConfig] = None,
+    ) -> Type[WristbandAuthMixin]:
+        """
+        Create a mixin for Django class-based views that enforces Wristband authentication.
+
+        This factory method returns a mixin class that can be used with any Django CBV.
+        Configuration is frozen at creation time. For different auth requirements,
+        call this factory multiple times to create different mixins.
+
+        Args:
+            strategies: List of auth strategies to try in order.
+            on_unauthenticated: What to do when user is not authenticated.
+            jwt_config: Optional JWT configuration (only used if AuthStrategy.JWT in strategies)
+
+        Returns:
+            Type[WristbandAuthMixin]: Mixin class for Django CBVs
+
+        Example:
+            # In your app's wristband.py configuration
+            SessionAuthMixin: Type[WristbandAuthMixin] = wristband_auth.create_auth_mixin(
+                strategies=[AuthStrategy.SESSION],
+                on_unauthenticated=UnauthenticatedBehavior.REDIRECT
+            )
+
+            JWTAuthMixin: Type[WristbandAuthMixin] = wristband_auth.create_auth_mixin(
+                strategies=[AuthStrategy.JWT],
+                on_unauthenticated=UnauthenticatedBehavior.JSON
+            )
+
+            # Then import and use in your views
+            from myapp.wristband import SessionAuthMixin
+
+            class DashboardView(SessionAuthMixin, TemplateView):
+                template_name = 'dashboard.html'
+
+            class APIView(JWTAuthMixin, View):
+                def get(self, request):
+                    return JsonResponse({'status': 'ok'})
+
+        Note:
+            The mixin must be the leftmost class in the inheritance chain:
+            CORRECT:   class MyView(SessionAuthMixin, TemplateView)
+            INCORRECT: class MyView(TemplateView, SessionAuthMixin)
+        """
+        if not strategies:
+            raise ValueError("At least one authentication strategy must be provided")
+
+        self._validate_auth_decorator_config(strategies, on_unauthenticated)
+
+        wristband_auth = self
+        frozen_strategies = strategies
+        frozen_on_unauthenticated = on_unauthenticated
+
+        # Create validator once at mixin creation time if JWT strategy is used
+        jwt_validator = None
+        if AuthStrategy.JWT in frozen_strategies:
+            jwt_validator = wristband_auth._create_jwt_validator(jwt_config)
+
+        class _WristbandAuthMixinImpl:
+            """
+            Mixin for Django class-based views that enforces Wristband authentication.
+
+            Configuration is frozen at mixin creation time.
+            """
+
+            def dispatch(self, request: HttpRequest, *args: Any, **kwargs: Any) -> HttpResponse:
+                """
+                Override dispatch to check authentication before processing request.
+
+                Tries each authentication strategy in order. If any succeeds,
+                the request proceeds to the view. If all fail, handles based
+                on on_unauthenticated setting.
+                """
+                # Ensure SessionMiddleware has attached a session to the request
+                if AuthStrategy.SESSION in strategies and not hasattr(request, "session"):
+                    raise RuntimeError("Session not found. Ensure SessionMiddleware is registered in your app.")
+
+                # Try each strategy in order
+                for strategy in frozen_strategies:
+                    try:
+                        if strategy == AuthStrategy.SESSION:
+                            if wristband_auth._try_session_auth(request):
+                                return super().dispatch(request, *args, **kwargs)  # type: ignore[misc,no-any-return]
+
+                        elif strategy == AuthStrategy.JWT:
+                            if wristband_auth._try_jwt_auth(request, jwt_validator):
+                                return super().dispatch(request, *args, **kwargs)  # type: ignore[misc,no-any-return]
+
+                    except Exception as e:
+                        _logger.debug(f"{strategy.value} authentication failed: {e}")
+                        continue
+
+                # All strategies failed - handle based on on_unauthenticated
+                if frozen_on_unauthenticated == UnauthenticatedBehavior.REDIRECT:
+                    login_url = wristband_auth._config_resolver.get_login_url()
+                    return redirect(login_url)
+                else:  # JSON
+                    return JsonResponse({"error": "Unauthorized"}, status=401)
+
+        return _WristbandAuthMixinImpl
+
+    #####################################################
+    #  DRF AUTHENTICATION FACTORY METHODS
+    #####################################################
+
+    def create_drf_session_auth(self) -> Type[WristbandDrfSessionAuth]:
+        """
+        Create a DRF authentication class for session-based authentication.
+
+        This factory method returns a DRF BaseAuthentication class configured to:
+        - Validate Wristband sessions on every request
+        - Automatically refresh expired access tokens
+        - Preserve Django User if auth backend is enabled
+        - Set request.user for IsAuthenticated permission
+
+        Requires: pip install wristband-django[drf]
+
+        Returns:
+            Type[WristbandDrfSessionAuth]: DRF authentication class for session auth
+
+        Raises:
+            ImportError: If Django REST Framework is not installed
+
+        Example:
+            # In your app's wristband.py configuration
+            from typing import Type
+            from wristband.django_auth import WristbandDrfSessionAuth
+
+            WristbandSessionAuth: Type[WristbandDrfSessionAuth] = wristband_auth.create_drf_session_auth()
+
+            # Then import and use in your DRF views
+            from myapp.wristband import WristbandSessionAuth
+            from rest_framework.views import APIView
+            from rest_framework.permissions import IsAuthenticated
+            from rest_framework.response import Response
+
+            class UserProfileView(APIView):
+                authentication_classes = [WristbandSessionAuth]
+                permission_classes = [IsAuthenticated]
+
+                def get(self, request):
+                    # Access session data
+                    user_id = request.session['user_id']
+                    tenant_name = request.session['tenant_name']
+
+                    return Response({
+                        'user_id': user_id,
+                        'tenant': tenant_name
+                    })
+        """
+        # Import DRF dependencies (raises ImportError if not installed)
+        try:
+            from rest_framework.authentication import BaseAuthentication
+        except ImportError:
+            raise ImportError(
+                "Django REST Framework is required to use DRF authentication classes. "
+                "Install it with: pip install wristband-django[drf]"
+            )
+
+        wristband_auth = self
+
+        # Try to import Django auth at creation time
+        try:
+            from django.contrib.auth import get_user, get_user_model
+
+            django_user_model = get_user_model()
+        except (ImportError, Exception):
+            django_user_model = None
+
+        class _WristbandDrfSessionAuthImpl(BaseAuthentication):
+            """
+            Authenticate requests using Wristband session cookies.
+
+            This authentication class:
+            - Validates Wristband session on every request
+            - Automatically refreshes expired access tokens
+            - Refreshes CSRF tokens (if CSRF middleware active)
+            - Preserves Django User if auth backend enabled
+            - Sets lightweight user for IsAuthenticated if no Django User
+
+            Data access:
+                request.session['user_id']
+                request.session['tenant_id']
+                request.session['tenant_name']
+                request.session['access_token']
+
+            Permission class:
+                permission_classes = [IsAuthenticated]
+            """
+
+            def authenticate(self, request: HttpRequest) -> Optional[Tuple[Any, None]]:
+                """
+                Authenticate the request using Wristband session.
+
+                Returns:
+                    tuple: (user, None) if authenticated, None if not
+                """
+                # ALWAYS revalidate Wristband session (includes token refresh)
+                if not wristband_auth._try_session_auth(request):
+                    return None  # Invalid or missing session
+
+                # Valid session - preserve Django User if it exists
+                if django_user_model is not None:
+                    user = get_user(request)
+                    if user and isinstance(user, django_user_model):
+                        return (user, None)
+
+                # No Django user - return lightweight authenticated user
+                class WristbandUser:
+                    is_authenticated = True
+
+                return (WristbandUser(), None)
+
+            def authenticate_header(self, request: HttpRequest) -> str:
+                """
+                Return WWW-Authenticate header value for 401 responses.
+
+                Returns:
+                    str: Authentication scheme name
+                """
+                return "Session"
+
+        return _WristbandDrfSessionAuthImpl
+
+    def create_drf_jwt_auth(self, jwt_config: Optional[JWTAuthConfig] = None) -> Type[WristbandDrfJwtAuth]:
+        """
+        Create a DRF authentication class for JWT bearer token authentication.
+
+        This factory method returns a DRF BaseAuthentication class configured to:
+        - Validate Wristband JWTs from Authorization header
+        - Preserve Django User only if JWT subject matches User ID
+        - Set request.user for IsAuthenticated permission
+        - Set request.auth with JWT payload
+
+        Requires: pip install wristband-django[drf]
+
+        Args:
+            jwt_config: Optional JWT validation configuration
+
+        Returns:
+            Type[WristbandDrfJwtAuth]: DRF authentication class for JWT auth
+
+        Raises:
+            ImportError: If Django REST Framework is not installed
+
+        Example:
+            # In your app's wristband.py configuration
+            from typing import Type
+            from wristband.django_auth import WristbandDrfJwtAuth
+
+            WristbandJwtAuth: Type[WristbandDrfJwtAuth] = wristband_auth.create_drf_jwt_auth()
+
+            # Then import and use in your DRF views
+            from myapp.wristband import WristbandJwtAuth
+            from rest_framework.views import APIView
+            from rest_framework.permissions import IsAuthenticated
+            from rest_framework.response import Response
+
+            class APIEndpoint(APIView):
+                authentication_classes = [WristbandJwtAuth]
+                permission_classes = [IsAuthenticated]
+
+                def get(self, request):
+                    # Access JWT claims via request.auth
+                    user_id = request.auth.payload['sub']
+                    tenant_id = request.auth.payload['tnt_id']
+
+                    return Response({
+                        'user_id': user_id,
+                        'tenant_id': tenant_id
+                    })
+        """
+        # Import DRF dependencies (raises ImportError if not installed)
+        try:
+            from rest_framework.authentication import BaseAuthentication
+        except ImportError:
+            raise ImportError(
+                "Django REST Framework is required to use DRF authentication classes. "
+                "Install it with: pip install wristband-django[drf]"
+            )
+
+        wristband_auth = self
+        jwt_validator = self._create_jwt_validator(jwt_config)
+
+        # EAFP: Try to import Django auth at creation time
+        try:
+            from django.contrib.auth import get_user, get_user_model
+
+            django_user_model = get_user_model()
+        except (ImportError, Exception):
+            django_user_model = None
+
+        class _WristbandDrfJwtAuthImpl(BaseAuthentication):
+            """
+            Authenticate requests using Wristband JWT bearer tokens.
+
+            This authentication class:
+            - Validates JWT from Authorization: Bearer <token> header
+            - Checks JWT signature and expiration
+            - Preserves Django User only if JWT sub matches User ID
+            - Sets lightweight user for IsAuthenticated if no match
+            - Sets request.auth with decoded JWT payload
+
+            Data access:
+                request.auth.payload['sub']
+                request.auth.payload['tnt_id']
+                request.auth.payload['app_id']
+                request.auth.jwt  # Raw token string
+
+            Permission class:
+                permission_classes = [IsAuthenticated]
+            """
+
+            def authenticate(self, request: HttpRequest) -> Optional[Tuple[Any, JWTAuthResult]]:
+                """
+                Authenticate the request using Wristband JWT.
+
+                Returns:
+                    tuple: (user, auth) if authenticated, None if not
+                """
+                # Validate JWT and set request.auth
+                if not wristband_auth._try_jwt_auth(request, jwt_validator):
+                    return None  # No token or invalid
+
+                # JWT valid - request.auth is now set with JWTAuthResult
+                wb_user_id = request.auth.payload.get("sub")  # type: ignore[attr-defined]
+
+                # Try to preserve Django User if username matches JWT sub
+                if django_user_model is not None:
+                    user = get_user(request)
+                    if user and isinstance(user, django_user_model):
+                        # Check if username matches (works with WristbandAuthBackend)
+                        if getattr(user, "username", None) == wb_user_id:
+                            return (user, request.auth)  # type: ignore[attr-defined]
+
+                # Otherwise - return JWT-backed user
+                class WristbandUser:
+                    is_authenticated = True
+
+                    def __init__(self, claims: dict[str, Any]) -> None:
+                        self.claims = claims
+                        self.id = claims.get("sub")
+
+                return (WristbandUser(request.auth.payload), request.auth)  # type: ignore[attr-defined]
+
+            def authenticate_header(self, request: HttpRequest) -> str:
+                """
+                Return WWW-Authenticate header value for 401 responses.
+
+                Returns:
+                    str: Authentication scheme with realm
+                """
+                return 'Bearer realm="api"'
+
+        return _WristbandDrfJwtAuthImpl
+
     #################################
     #  HELPER METHODS
     #################################
 
-    def _resolve_tenant_domain_name(
-        self, request: HttpRequest, parse_tenant_from_root_domain: Optional[str]
-    ) -> Optional[str]:
-        """Resolve tenant domain from request"""
+    def _create_auth_wrapper(
+        self,
+        view_func: Callable[..., HttpResponse],
+        strategies: List[AuthStrategy],
+        on_unauthenticated: UnauthenticatedBehavior,
+        jwt_validator: Any,
+    ) -> Callable[..., HttpResponse]:
+        """
+        Create the actual wrapper function that performs authentication.
+
+        This is separated from the decorator factory to handle both @decorator
+        and @decorator(...) syntax cleanly.
+        """
+
+        @wraps(view_func)
+        def wrapper(request: HttpRequest, *args: Any, **kwargs: Any) -> HttpResponse:
+            # Ensure SessionMiddleware has attached a session to the request
+            if AuthStrategy.SESSION in strategies and not hasattr(request, "session"):
+                raise RuntimeError("Session not found. Ensure SessionMiddleware is registered in your app.")
+
+            # Try each strategy in order
+            for strategy in strategies:
+                try:
+                    if strategy == AuthStrategy.SESSION:
+                        if self._try_session_auth(request):
+                            return view_func(request, *args, **kwargs)
+
+                    elif strategy == AuthStrategy.JWT:
+                        if self._try_jwt_auth(request, jwt_validator):
+                            return view_func(request, *args, **kwargs)
+
+                except Exception as e:
+                    # Log but continue to next strategy
+                    _logger.debug(f"{strategy.value} authentication failed: {e}")
+                    continue
+
+            # All strategies failed - handle based on on_unauthenticated
+            if on_unauthenticated == UnauthenticatedBehavior.REDIRECT:
+                login_url = self._config_resolver.get_login_url()
+                return redirect(login_url)
+            else:  # JSON
+                return JsonResponse({"error": "Unauthorized"}, status=401)
+
+        return wrapper
+
+    def _try_session_auth(self, request: HttpRequest) -> bool:
+        """
+        Attempt session-based authentication.
+
+        Returns True if a valid authenticated session is present; False otherwise.
+        """
+        from django.middleware.csrf import get_token
+
+        # Check if user is authenticated
+        if not request.session.get("is_authenticated", False):
+            return False
+
+        # Try to refresh tokens if possible (optional)
+        refresh_token = request.session.get("refresh_token")
+        expires_at = request.session.get("expires_at")
+        if refresh_token is not None and expires_at is not None:
+            try:
+                # Update session with fresh tokens if a refresh occurred
+                new_token_data: Optional[TokenData] = self.refresh_token_if_expired(refresh_token, expires_at)
+                if new_token_data:
+                    _logger.debug("Token refresh succeeded during session auth")
+                    request.session["access_token"] = new_token_data.access_token
+                    request.session["refresh_token"] = new_token_data.refresh_token
+                    request.session["expires_at"] = new_token_data.expires_at
+
+            except Exception as e:
+                _logger.debug(f"Token refresh failed during session auth: {str(e)}")
+                return False
+
+        # Touch the session to update expiry (rolling session)
+        request.session.modified = True
+
+        # Refresh CSRF token if CsrfViewMiddleware is active (rolling session sync)
+        middleware = getattr(settings, "MIDDLEWARE", [])
+        if "django.middleware.csrf.CsrfViewMiddleware" in middleware:
+            get_token(request)
+
+        return True
+
+    def _try_jwt_auth(self, request: HttpRequest, jwt_validator: Any) -> bool:
+        """
+        Attempt JWT bearer token authentication.
+
+        Returns True if JWT is valid. Sets request.jwt_auth with both token and decoded JWT payload.
+        """
+        from wristband.python_jwt import JWTPayload, JwtValidationResult
+
+        if not jwt_validator:
+            raise RuntimeError("JWT Validator instance must be created for JWT auth strategy.")
+
+        # Extract Authorization header
+        auth_header = request.headers.get("Authorization", "")
+        if not auth_header:
+            _logger.debug("JWT auth failed: Missing Authorization header")
+            return False
+
+        # Extract the Bearer token from the header
+        token = jwt_validator.extract_bearer_token(auth_header)
+        if not token:
+            _logger.debug("JWT auth failed: Invalid Authorization header format. Expected 'Bearer <token>'")
+            return False
+
+        try:
+            # Validate the JWT token
+            result: JwtValidationResult = jwt_validator.validate(token)
+            if not result.is_valid:
+                _logger.debug("JWT auth failed: Invalid or expired token")
+                return False
+
+            # Cast payload to JWTPayload and attach to request
+            payload = cast(JWTPayload, result.payload)
+            setattr(request, "auth", JWTAuthResult(jwt=token, payload=payload))
+            return True
+        except Exception as e:
+            _logger.debug(f"JWT validation failed: {e}")
+            return False
+
+    def _validate_auth_decorator_config(
+        self, strategies: List[AuthStrategy], on_unauthenticated: UnauthenticatedBehavior
+    ) -> None:
+        """
+        Validate decorator configuration parameters.
+
+        Args:
+            strategies: List of auth strategies to validate
+            on_unauthenticated: Behavior to validate
+        """
+
+        if len(strategies) != len(set(strategies)):
+            raise ValueError("Duplicate authentication strategies are not allowed")
+
+        for strategy in strategies:
+            if not isinstance(strategy, AuthStrategy):
+                raise ValueError(f"Invalid authentication strategy: {strategy}")
+
+        if not isinstance(on_unauthenticated, UnauthenticatedBehavior):
+            raise ValueError(f"Invalid on_unauthenticated value: {on_unauthenticated}")
+
+    def _create_jwt_validator(self, jwt_config: Optional[JWTAuthConfig]) -> Any:
+        """
+        Create a JWT validator with the given config.
+
+        The validator is created once on first use and reused for all subsequent requests.
+        """
+        from wristband.python_jwt import WristbandJwtValidatorConfig, create_wristband_jwt_validator
+
+        config = WristbandJwtValidatorConfig(
+            wristband_application_vanity_domain=self._config_resolver.get_wristband_application_vanity_domain(),
+            jwks_cache_max_size=jwt_config.jwks_cache_max_size if jwt_config else 20,
+            jwks_cache_ttl=jwt_config.jwks_cache_ttl if jwt_config else None,
+        )
+        return create_wristband_jwt_validator(config)
+
+    def _resolve_tenant_name(self, request: HttpRequest, parse_tenant_from_root_domain: Optional[str]) -> Optional[str]:
+        """Resolve tenant name from request"""
         if parse_tenant_from_root_domain and parse_tenant_from_root_domain.strip():
             host = request.get_host()
 
-            if not host.endswith(parse_tenant_from_root_domain):
+            # Strip off the port if it exists
+            hostname = host.split(":")[0]
+
+            # Extract everything after the first dot
+            if "." not in hostname:
                 return None
 
-            subdomain = host[: -len(parse_tenant_from_root_domain)].rstrip(".")
+            root_domain = hostname[hostname.index(".") + 1 :]
+
+            # Check if the root domain matches
+            if root_domain != parse_tenant_from_root_domain:
+                return None
+
+            # Extract subdomain (everything before the first dot)
+            subdomain = hostname[: hostname.index(".")]
             return subdomain if subdomain else None
 
-        return self._assert_single_param(request, "tenant_domain")
+        return self._assert_single_param(request, "tenant_name")
 
     def _resolve_tenant_custom_domain_param(self, request: HttpRequest) -> Optional[str]:
         """Resolve tenant custom domain from request"""
@@ -525,7 +1142,7 @@ class WristbandAuth:
         resolved_return_url = return_url or (return_url_list[0] if return_url_list else None)
 
         if resolved_return_url and len(resolved_return_url) > self._return_url_char_max_len:
-            logger.debug(f"Return URL exceeds {self._return_url_char_max_len} characters: {resolved_return_url}")
+            _logger.debug(f"Return URL exceeds {self._return_url_char_max_len} characters: {resolved_return_url}")
             return None
 
         return resolved_return_url
@@ -602,23 +1219,23 @@ class WristbandAuth:
         # Domain priority order resolution:
         # 1)  tenant_custom_domain query param
         # 2a) tenant subdomain
-        # 2b) tenant_domain query param
+        # 2b) tenant_name query param
         # 3)  defaultTenantCustomDomain login config
         # 4)  defaultTenantDomainName login config
         if config.tenant_custom_domain:
             return f"https://{config.tenant_custom_domain}{path_and_query}"
-        if config.tenant_domain_name:
+        if config.tenant_name:
             return (
-                f"https://{config.tenant_domain_name}"
+                f"https://{config.tenant_name}"
                 f"{separator}{config.wristband_application_vanity_domain}"
                 f"{path_and_query}"
             )
         if config.default_tenant_custom_domain:
             return f"https://{config.default_tenant_custom_domain}{path_and_query}"
 
-        # By this point, we know the tenant domain name has already resolved properly, so just return the default.
+        # By this point, we know the tenant name has already resolved properly, so just return the default.
         return (
-            f"https://{config.default_tenant_domain_name}"
+            f"https://{config.default_tenant_name}"
             f"{separator}{config.wristband_application_vanity_domain}"
             f"{path_and_query}"
         )
@@ -697,15 +1314,15 @@ class WristbandAuth:
     def _build_tenant_login_url(
         self,
         login_url: str,
-        tenant_domain: str,
+        tenant_name: str,
         tenant_custom_domain: Optional[str] = None,
         parse_tenant_from_root_domain: Optional[str] = None,
     ) -> str:
         """Build tenant login URL"""
         if parse_tenant_from_root_domain and parse_tenant_from_root_domain.strip():
-            tenant_login_url = login_url.replace("{tenant_domain}", tenant_domain)
+            tenant_login_url = self._tenant_placeholder_pattern.sub(tenant_name, login_url)
         else:
-            tenant_login_url = f"{login_url}?tenant_domain={tenant_domain}"
+            tenant_login_url = f"{login_url}?tenant_name={tenant_name}"
 
         # If the tenant_custom_domain is set, add that query param
         if tenant_custom_domain:

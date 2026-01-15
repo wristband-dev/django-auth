@@ -2,6 +2,7 @@ from unittest.mock import patch
 
 import pytest
 from django.conf import settings
+from django.http import HttpResponse
 from django.test import RequestFactory
 
 from tests.utilities import (
@@ -87,9 +88,9 @@ class TestWristbandAuthLogin:
         login_cookies = [(key, response.cookies[key]) for key in response.cookies.keys() if key.startswith("login#")]
         assert len(login_cookies) == 0, f"Expected 0 login cookies, found {len(login_cookies)}"
 
-    def test_login_with_tenant_domain_creates_oauth_url(self) -> None:
-        """Test login creates full OAuth URL when tenant domain is available."""
-        request = self.factory.get("/login?tenant_domain=test-tenant")
+    def test_login_with_tenant_name_creates_oauth_url(self) -> None:
+        """Test login creates full OAuth URL when tenant name is available."""
+        request = self.factory.get("/login?tenant_name=test-tenant")
         response = self.wristband_auth.login(request)
 
         # Validate redirect response
@@ -104,7 +105,7 @@ class TestWristbandAuthLogin:
 
     def test_login_with_login_config_custom_state(self) -> None:
         """Test login passes custom state from LoginConfig."""
-        request = self.factory.get("/login?tenant_domain=test-tenant")
+        request = self.factory.get("/login?tenant_name=test-tenant")
         custom_state = {"user_preference": "dark_mode"}
         login_config = LoginConfig(custom_state=custom_state)
 
@@ -133,10 +134,10 @@ class TestWristbandAuthLogin:
     def test_login_with_tenant_custom_domain_param(self) -> None:
         """01: Test login uses tenant custom domain from params as top priority."""
         request = self.factory.get(
-            "/login?tenant_domain=tenantA&tenant_custom_domain=tenantA.custom.com", HTTP_HOST="sub.custom.com"
+            "/login?tenant_name=tenantA&tenant_custom_domain=tenantA.custom.com", HTTP_HOST="sub.custom.com"
         )
         login_config = LoginConfig(
-            default_tenant_domain="default-tenant",
+            default_tenant_name="default-tenant",
             default_tenant_custom_domain="default.custom.com",
         )
 
@@ -158,8 +159,8 @@ class TestWristbandAuthLogin:
             client_id="test_client_id",
             client_secret="test_client_secret",
             login_state_secret=test_login_state_secret,
-            login_url="https://{tenant_domain}.auth.example.com/login",
-            redirect_uri="https://{tenant_domain}.app.example.com/callback",
+            login_url="https://{tenant_name}.auth.example.com/login",
+            redirect_uri="https://{tenant_name}.app.example.com/callback",
             wristband_application_vanity_domain="auth.example.com",
             parse_tenant_from_root_domain="custom.com",
             scopes=["openid", "email"],
@@ -167,9 +168,9 @@ class TestWristbandAuthLogin:
         )
         temp_wristband_auth = WristbandAuth(temp_config)
 
-        request = self.factory.get("/login?tenant_domain=tenantA", HTTP_HOST="sub.custom.com")
+        request = self.factory.get("/login?tenant_name=tenantA", HTTP_HOST="sub.custom.com")
         login_config = LoginConfig(
-            default_tenant_domain="default-tenant",
+            default_tenant_name="default-tenant",
             default_tenant_custom_domain="default.custom.com",
         )
 
@@ -181,17 +182,17 @@ class TestWristbandAuthLogin:
 
         # Validate query params
         assert_authorize_query_params(
-            query_params, "test_client_id", "https://{tenant_domain}.app.example.com/callback", "openid email"
+            query_params, "test_client_id", "https://{tenant_name}.app.example.com/callback", "openid email"
         )
 
         # Validate login state cookie is set
         assert_single_login_cookie_valid(response)
 
-    def test_login_with_tenant_domain_param(self) -> None:
-        """02b: Test login uses tenant domain param as next priority."""
-        request = self.factory.get("/login?tenant_domain=tenantA")
+    def test_login_with_tenant_name_param(self) -> None:
+        """02b: Test login uses tenant name param as next priority."""
+        request = self.factory.get("/login?tenant_name=tenantA")
         login_config = LoginConfig(
-            default_tenant_domain="default-tenant",
+            default_tenant_name="default-tenant",
             default_tenant_custom_domain="default.custom.com",
         )
 
@@ -211,7 +212,7 @@ class TestWristbandAuthLogin:
         """Test login uses default tenant custom domain from LoginConfig."""
         request = self.factory.get("/login")
         login_config = LoginConfig(
-            default_tenant_domain="default-tenant",
+            default_tenant_name="default-tenant",
             default_tenant_custom_domain="default.custom.com",
         )
 
@@ -227,11 +228,11 @@ class TestWristbandAuthLogin:
         # Validate login state cookie is set
         assert_single_login_cookie_valid(response)
 
-    def test_login_with_default_tenant_domain_only(self) -> None:
-        """Test login uses default tenant domain from LoginConfig when no other tenant values found."""
+    def test_login_with_default_tenant_name_only(self) -> None:
+        """Test login uses default tenant name from LoginConfig when no other tenant values found."""
         request = self.factory.get("/login")
         login_config = LoginConfig(
-            default_tenant_domain="default-tenant",
+            default_tenant_name="default-tenant",
         )
 
         response = self.wristband_auth.login(request, login_config)
@@ -248,7 +249,7 @@ class TestWristbandAuthLogin:
 
     def test_login_with_return_url_from_login_config_takes_precedence(self) -> None:
         """Test that LoginConfig return_url takes precedence over query parameter."""
-        request = self.factory.get("/login?tenant_domain=test-tenant&return_url=https://query.example.com/dashboard")
+        request = self.factory.get("/login?tenant_name=test-tenant&return_url=https://query.example.com/dashboard")
         login_config = LoginConfig(return_url="https://config.example.com/preferred")
 
         response = self.wristband_auth.login(request, login_config)
@@ -267,7 +268,7 @@ class TestWristbandAuthLogin:
 
     def test_login_with_return_url_from_query_param_when_no_config(self) -> None:
         """Test that query parameter return_url is used when LoginConfig return_url is None."""
-        request = self.factory.get("/login?tenant_domain=test-tenant&return_url=https://query.example.com/dashboard")
+        request = self.factory.get("/login?tenant_name=test-tenant&return_url=https://query.example.com/dashboard")
         login_config = LoginConfig()  # return_url is None by default
 
         response = self.wristband_auth.login(request, login_config)
@@ -286,7 +287,7 @@ class TestWristbandAuthLogin:
 
     def test_login_with_empty_string_return_url_in_config_uses_query_param(self) -> None:
         """Test that empty string return_url in LoginConfig falls back to query param (falsy behavior)."""
-        request = self.factory.get("/login?tenant_domain=test-tenant&return_url=https://query.example.com/dashboard")
+        request = self.factory.get("/login?tenant_name=test-tenant&return_url=https://query.example.com/dashboard")
         login_config = LoginConfig(return_url="")  # Empty string is falsy
 
         response = self.wristband_auth.login(request, login_config)
@@ -298,7 +299,7 @@ class TestWristbandAuthLogin:
 
     def test_login_with_no_return_url_anywhere(self) -> None:
         """Test that no return_url is set when neither LoginConfig nor query param provide it."""
-        request = self.factory.get("/login?tenant_domain=test-tenant")
+        request = self.factory.get("/login?tenant_name=test-tenant")
         login_config = LoginConfig()  # return_url is None
 
         response = self.wristband_auth.login(request, login_config)
@@ -524,9 +525,9 @@ class TestWristbandAuthGetOAuthAuthorizeUrl:
             scopes=["openid", "email", "profile"],
             state="test_state",
             tenant_custom_domain="custom.tenant.com",
-            tenant_domain_name="tenant1",
+            tenant_name="tenant1",
             default_tenant_custom_domain=None,
-            default_tenant_domain_name=None,
+            default_tenant_name=None,
             is_application_custom_domain_active=False,
             wristband_application_vanity_domain="auth.example.com",
         )
@@ -538,8 +539,8 @@ class TestWristbandAuthGetOAuthAuthorizeUrl:
         assert "state=test_state" in result
         assert "scope=openid+email+profile" in result
 
-    def test_get_oauth_authorize_url_with_tenant_domain_name(self) -> None:
-        """Test _get_oauth_authorize_url uses tenant domain name when custom domain not available."""
+    def test_get_oauth_authorize_url_with_tenant_name(self) -> None:
+        """Test _get_oauth_authorize_url uses tenant name when custom domain not available."""
         request = self.factory.get("/login")
 
         oauth_config = OAuthAuthorizeUrlConfig(
@@ -549,9 +550,9 @@ class TestWristbandAuthGetOAuthAuthorizeUrl:
             scopes=["openid", "email", "profile"],
             state="test_state",
             tenant_custom_domain=None,
-            tenant_domain_name="tenant1",
+            tenant_name="tenant1",
             default_tenant_custom_domain=None,
-            default_tenant_domain_name=None,
+            default_tenant_name=None,
             is_application_custom_domain_active=False,
             wristband_application_vanity_domain="auth.example.com",
         )
@@ -572,9 +573,9 @@ class TestWristbandAuthGetOAuthAuthorizeUrl:
             scopes=["openid", "email", "profile"],
             state="test_state",
             tenant_custom_domain="custom.tenant.com",
-            tenant_domain_name=None,
+            tenant_name=None,
             default_tenant_custom_domain=None,
-            default_tenant_domain_name=None,
+            default_tenant_name=None,
             is_application_custom_domain_active=False,
             wristband_application_vanity_domain="auth.example.com",
         )
@@ -594,9 +595,9 @@ class TestWristbandAuthGetOAuthAuthorizeUrl:
             scopes=["openid", "email", "profile"],
             state="test_state",
             tenant_custom_domain="custom.tenant.com",
-            tenant_domain_name=None,
+            tenant_name=None,
             default_tenant_custom_domain=None,
-            default_tenant_domain_name=None,
+            default_tenant_name=None,
             is_application_custom_domain_active=False,
             wristband_application_vanity_domain="auth.example.com",
         )
@@ -682,8 +683,8 @@ class TestWristbandAuthBuildTenantLoginUrl:
             client_id="test_client_id",
             client_secret="test_client_secret",
             login_state_secret=test_login_state_secret,
-            login_url="https://{tenant_domain}.auth.example.com/login",
-            redirect_uri="https://{tenant_domain}.app.example.com/callback",
+            login_url="https://{tenant_name}.auth.example.com/login",
+            redirect_uri="https://{tenant_name}.app.example.com/callback",
             wristband_application_vanity_domain="auth.example.com",
             parse_tenant_from_root_domain="auth.example.com",
             auto_configure_enabled=False,
@@ -691,8 +692,8 @@ class TestWristbandAuthBuildTenantLoginUrl:
         wristband_auth = WristbandAuth(config_with_subdomain)
 
         result = wristband_auth._build_tenant_login_url(
-            login_url="https://{tenant_domain}.auth.example.com/login",
-            tenant_domain="tenant1",
+            login_url="https://{tenant_name}.auth.example.com/login",
+            tenant_name="tenant1",
             tenant_custom_domain=None,
             parse_tenant_from_root_domain="auth.example.com",
         )
@@ -703,23 +704,23 @@ class TestWristbandAuthBuildTenantLoginUrl:
         """Test _build_tenant_login_url without subdomain parsing."""
         result = self.wristband_auth._build_tenant_login_url(
             login_url="https://auth.example.com/login",
-            tenant_domain="tenant1",
+            tenant_name="tenant1",
             tenant_custom_domain=None,
             parse_tenant_from_root_domain=None,
         )
 
-        assert result == "https://auth.example.com/login?tenant_domain=tenant1"
+        assert result == "https://auth.example.com/login?tenant_name=tenant1"
 
     def test_build_tenant_login_url_with_tenant_custom_domain(self) -> None:
         """Test _build_tenant_login_url adds tenant_custom_domain parameter."""
         result = self.wristband_auth._build_tenant_login_url(
             login_url="https://auth.example.com/login",
-            tenant_domain="tenant1",
+            tenant_name="tenant1",
             tenant_custom_domain="custom.tenant.com",
             parse_tenant_from_root_domain=None,
         )
 
-        expected = "https://auth.example.com/login?tenant_domain=tenant1&tenant_custom_domain=custom.tenant.com"
+        expected = "https://auth.example.com/login?tenant_name=tenant1&tenant_custom_domain=custom.tenant.com"
         assert result == expected
 
 
@@ -740,14 +741,14 @@ class TestWristbandAuthResolveTenantMethods:
         self.wristband_auth = WristbandAuth(self.auth_config)
         self.factory = RequestFactory()
 
-    def test_resolve_tenant_domain_name_from_subdomain(self) -> None:
-        """Test _resolve_tenant_domain_name extracts tenant from subdomain."""
+    def test_resolve_tenant_name_from_subdomain(self) -> None:
+        """Test _resolve_tenant_name extracts tenant from subdomain."""
         config_with_subdomain = AuthConfig(
             client_id="test_client_id",
             client_secret="test_client_secret",
             login_state_secret=test_login_state_secret,
-            login_url="https://{tenant_domain}.auth.example.com/login",
-            redirect_uri="https://{tenant_domain}.app.example.com/callback",
+            login_url="https://{tenant_name}.auth.example.com/login",
+            redirect_uri="https://{tenant_name}.app.example.com/callback",
             wristband_application_vanity_domain="auth.example.com",
             parse_tenant_from_root_domain="auth.example.com",
             auto_configure_enabled=False,
@@ -756,15 +757,15 @@ class TestWristbandAuthResolveTenantMethods:
 
         request = self.factory.get("/login")
         with patch.object(request, "get_host", return_value="tenant1.auth.example.com"):
-            result = wristband_auth._resolve_tenant_domain_name(request, "auth.example.com")
+            result = wristband_auth._resolve_tenant_name(request, "auth.example.com")
 
         assert result == "tenant1"
 
-    def test_resolve_tenant_domain_name_from_query_param(self) -> None:
-        """Test _resolve_tenant_domain_name gets tenant from query parameter."""
-        request = self.factory.get("/login?tenant_domain=tenant1")
+    def test_resolve_tenant_name_from_query_param(self) -> None:
+        """Test _resolve_tenant_name gets tenant from query parameter."""
+        request = self.factory.get("/login?tenant_name=tenant1")
 
-        result = self.wristband_auth._resolve_tenant_domain_name(request, None)
+        result = self.wristband_auth._resolve_tenant_name(request, None)
 
         assert result == "tenant1"
 
@@ -781,6 +782,126 @@ class TestWristbandAuthResolveTenantMethods:
         request = self.factory.get("/login")
 
         result = self.wristband_auth._resolve_tenant_custom_domain_param(request)
+
+        assert result is None
+
+    def test_resolve_tenant_name_from_subdomain_with_port(self) -> None:
+        """Test _resolve_tenant_name extracts tenant from subdomain and strips port."""
+        config_with_subdomain = AuthConfig(
+            client_id="test_client_id",
+            client_secret="test_client_secret",
+            login_state_secret=test_login_state_secret,
+            login_url="https://{tenant_name}.auth.example.com/login",
+            redirect_uri="https://{tenant_name}.app.example.com/callback",
+            wristband_application_vanity_domain="auth.example.com",
+            parse_tenant_from_root_domain="auth.example.com",
+            auto_configure_enabled=False,
+        )
+        wristband_auth = WristbandAuth(config_with_subdomain)
+
+        request = self.factory.get("/login")
+        with patch.object(request, "get_host", return_value="tenant1.auth.example.com:8080"):
+            result = wristband_auth._resolve_tenant_name(request, "auth.example.com")
+
+        assert result == "tenant1"
+
+    def test_resolve_tenant_name_from_subdomain_with_https_port(self) -> None:
+        """Test _resolve_tenant_name extracts tenant from subdomain and strips HTTPS port."""
+        config_with_subdomain = AuthConfig(
+            client_id="test_client_id",
+            client_secret="test_client_secret",
+            login_state_secret=test_login_state_secret,
+            login_url="https://{tenant_name}.auth.example.com/login",
+            redirect_uri="https://{tenant_name}.app.example.com/callback",
+            wristband_application_vanity_domain="auth.example.com",
+            parse_tenant_from_root_domain="auth.example.com",
+            auto_configure_enabled=False,
+        )
+        wristband_auth = WristbandAuth(config_with_subdomain)
+
+        request = self.factory.get("/login")
+        with patch.object(request, "get_host", return_value="tenant1.auth.example.com:443"):
+            result = wristband_auth._resolve_tenant_name(request, "auth.example.com")
+
+        assert result == "tenant1"
+
+    def test_resolve_tenant_name_from_subdomain_mismatched_root_domain(self) -> None:
+        """Test _resolve_tenant_name returns None when root domain doesn't match."""
+        config_with_subdomain = AuthConfig(
+            client_id="test_client_id",
+            client_secret="test_client_secret",
+            login_state_secret=test_login_state_secret,
+            login_url="https://{tenant_name}.auth.example.com/login",
+            redirect_uri="https://{tenant_name}.app.example.com/callback",
+            wristband_application_vanity_domain="auth.example.com",
+            parse_tenant_from_root_domain="auth.example.com",
+            auto_configure_enabled=False,
+        )
+        wristband_auth = WristbandAuth(config_with_subdomain)
+
+        request = self.factory.get("/login")
+        with patch.object(request, "get_host", return_value="tenant1.wrong.com"):
+            result = wristband_auth._resolve_tenant_name(request, "auth.example.com")
+
+        assert result is None
+
+    def test_resolve_tenant_name_from_subdomain_no_subdomain(self) -> None:
+        """Test _resolve_tenant_name returns None when no subdomain present."""
+        config_with_subdomain = AuthConfig(
+            client_id="test_client_id",
+            client_secret="test_client_secret",
+            login_state_secret=test_login_state_secret,
+            login_url="https://{tenant_name}.auth.example.com/login",
+            redirect_uri="https://{tenant_name}.app.example.com/callback",
+            wristband_application_vanity_domain="auth.example.com",
+            parse_tenant_from_root_domain="auth.example.com",
+            auto_configure_enabled=False,
+        )
+        wristband_auth = WristbandAuth(config_with_subdomain)
+
+        request = self.factory.get("/login")
+        with patch.object(request, "get_host", return_value="auth.example.com"):
+            result = wristband_auth._resolve_tenant_name(request, "auth.example.com")
+
+        assert result is None
+
+    def test_resolve_tenant_name_from_subdomain_no_dots(self) -> None:
+        """Test _resolve_tenant_name returns None when hostname has no dots."""
+        config_with_subdomain = AuthConfig(
+            client_id="test_client_id",
+            client_secret="test_client_secret",
+            login_state_secret=test_login_state_secret,
+            login_url="https://{tenant_name}.auth.example.com/login",
+            redirect_uri="https://{tenant_name}.app.example.com/callback",
+            wristband_application_vanity_domain="auth.example.com",
+            parse_tenant_from_root_domain="auth.example.com",
+            auto_configure_enabled=False,
+        )
+        wristband_auth = WristbandAuth(config_with_subdomain)
+
+        request = self.factory.get("/login")
+        with patch.object(request, "get_host", return_value="localhost"):
+            result = wristband_auth._resolve_tenant_name(request, "auth.example.com")
+
+        assert result is None
+
+    def test_resolve_tenant_name_from_subdomain_with_port_and_no_dots(self) -> None:
+        """Test _resolve_tenant_name returns None when hostname with port has no dots."""
+        config_with_subdomain = AuthConfig(
+            client_id="test_client_id",
+            client_secret="test_client_secret",
+            login_state_secret=test_login_state_secret,
+            login_url="https://{tenant_name}.auth.example.com/login",
+            redirect_uri="https://{tenant_name}.app.example.com/callback",
+            wristband_application_vanity_domain="auth.example.com",
+            parse_tenant_from_root_domain="auth.example.com",
+            auto_configure_enabled=False,
+        )
+        wristband_auth = WristbandAuth(config_with_subdomain)
+
+        request = self.factory.get("/login")
+        with patch.object(request, "get_host", return_value="localhost:8080"):
+            result = wristband_auth._resolve_tenant_name(request, "auth.example.com")
 
         assert result is None
 
@@ -853,7 +974,6 @@ class TestClearOldestLoginStateCooie:
 
     def test_clear_oldest_login_state_cookie_with_fewer_than_three_cookies(self) -> None:
         """Test _clear_oldest_login_state_cookie does nothing when fewer than 3 login cookies exist."""
-        from django.http import HttpResponse
 
         request = self.factory.get("/login")
         request.COOKIES = {
@@ -871,8 +991,6 @@ class TestClearOldestLoginStateCooie:
 
     def test_clear_oldest_login_state_cookie_clears_oldest_when_three_or_more(self) -> None:
         """Test _clear_oldest_login_state_cookie clears oldest cookies when 3+ exist."""
-        from django.http import HttpResponse
-
         request = self.factory.get("/login")
         request.COOKIES = {
             "login#state1#1640995200000": "encrypted_data_1",  # oldest
@@ -899,8 +1017,6 @@ class TestClearOldestLoginStateCooie:
 
     def test_clear_oldest_login_state_cookie_clears_multiple_old_cookies(self) -> None:
         """Test _clear_oldest_login_state_cookie clears multiple old cookies when more than 3 exist."""
-        from django.http import HttpResponse
-
         request = self.factory.get("/login")
         request.COOKIES = {
             "login#state1#1640995200000": "encrypted_data_1",  # oldest - should be cleared
@@ -923,8 +1039,6 @@ class TestClearOldestLoginStateCooie:
 
     def test_clear_oldest_login_state_cookie_ignores_malformed_cookie_names(self) -> None:
         """Test _clear_oldest_login_state_cookie handles malformed login cookie names gracefully."""
-        from django.http import HttpResponse
-
         request = self.factory.get("/login")
         request.COOKIES = {
             "login#state1": "encrypted_data_1",  # missing timestamp
@@ -946,8 +1060,6 @@ class TestClearOldestLoginStateCooie:
 
     def test_clear_oldest_login_state_cookie_with_secure_cookies_disabled(self) -> None:
         """Test _clear_oldest_login_state_cookie respects dangerously_disable_secure_cookies setting."""
-        from django.http import HttpResponse
-
         # Create config with secure cookies disabled
         insecure_config = AuthConfig(
             client_id="test_client_id",
@@ -980,8 +1092,6 @@ class TestClearOldestLoginStateCooie:
 
     def test_clear_oldest_login_state_cookie_ignores_non_login_cookies(self) -> None:
         """Test _clear_oldest_login_state_cookie only processes login state cookies."""
-        from django.http import HttpResponse
-
         request = self.factory.get("/login")
         request.COOKIES = {
             "login#state1#1640995200000": "encrypted_data_1",
@@ -1004,3 +1114,225 @@ class TestClearOldestLoginStateCooie:
         assert "session_id" not in cleared_cookies
         assert "csrf_token" not in cleared_cookies
         assert "other_login_like" not in cleared_cookies
+
+
+class TestWristbandAuthLoginBackwardCompatibility:
+    """Test cases for backward compatibility with {tenant_domain} placeholder in login."""
+
+    def setup_method(self) -> None:
+        """Set up test fixtures."""
+        self.factory = RequestFactory()
+
+    def test_login_with_tenant_domain_placeholder_in_login_url(self) -> None:
+        """Test login works with {tenant_domain} placeholder in login_url."""
+        config = AuthConfig(
+            client_id="test_client_id",
+            client_secret="test_client_secret",
+            login_state_secret=test_login_state_secret,
+            login_url="https://{tenant_domain}.auth.example.com/login",
+            redirect_uri="https://{tenant_domain}.app.example.com/callback",
+            wristband_application_vanity_domain="auth.example.com",
+            parse_tenant_from_root_domain="auth.example.com",
+            scopes=["openid", "offline_access", "email"],
+            auto_configure_enabled=False,
+        )
+        wristband_auth = WristbandAuth(config)
+
+        # Fixed: Use HTTP_HOST to provide subdomain when parse_tenant_from_root_domain is set
+        request = self.factory.get("/login", HTTP_HOST="tenant1.auth.example.com")
+        response = wristband_auth.login(request)
+
+        # Validate redirect response uses tenant_name in subdomain
+        expected_url = "https://tenant1-auth.example.com/api/v1/oauth2/authorize"
+        _, query_params = assert_redirect_no_cache(response, expected_url)
+
+        # Validate query params
+        assert_authorize_query_params(
+            query_params, "test_client_id", "https://{tenant_domain}.app.example.com/callback"
+        )
+
+        # Validate login state cookie is set
+        assert_single_login_cookie_valid(response)
+
+    def test_login_with_tenant_domain_placeholder_and_subdomain_parsing(self) -> None:
+        """Test login with {tenant_domain} placeholder extracts tenant from subdomain."""
+        config = AuthConfig(
+            client_id="test_client_id",
+            client_secret="test_client_secret",
+            login_state_secret=test_login_state_secret,
+            login_url="https://{tenant_domain}.auth.example.com/login",
+            redirect_uri="https://{tenant_domain}.app.example.com/callback",
+            wristband_application_vanity_domain="auth.example.com",
+            parse_tenant_from_root_domain="auth.example.com",
+            scopes=["openid", "offline_access", "email"],
+            auto_configure_enabled=False,
+        )
+        wristband_auth = WristbandAuth(config)
+
+        request = self.factory.get("/login", HTTP_HOST="tenant1.auth.example.com")
+        response = wristband_auth.login(request)
+
+        # Validate redirect response substitutes {tenant_domain} with tenant1
+        expected_url = "https://tenant1-auth.example.com/api/v1/oauth2/authorize"
+        _, query_params = assert_redirect_no_cache(response, expected_url)
+
+        # Validate query params
+        assert_authorize_query_params(
+            query_params, "test_client_id", "https://{tenant_domain}.app.example.com/callback"
+        )
+
+        # Validate login state cookie is set
+        assert_single_login_cookie_valid(response)
+
+    def test_login_mixed_tenant_name_and_tenant_domain_placeholders(self) -> None:
+        """Test login works when mixing {tenant_name} and {tenant_domain} placeholders."""
+        config = AuthConfig(
+            client_id="test_client_id",
+            client_secret="test_client_secret",
+            login_state_secret=test_login_state_secret,
+            login_url="https://{tenant_domain}.auth.example.com/login",
+            redirect_uri="https://{tenant_name}.app.example.com/callback",
+            wristband_application_vanity_domain="auth.example.com",
+            parse_tenant_from_root_domain="auth.example.com",
+            scopes=["openid", "offline_access", "email"],
+            auto_configure_enabled=False,
+        )
+        wristband_auth = WristbandAuth(config)
+
+        # Fixed: Use HTTP_HOST when parse_tenant_from_root_domain is set
+        request = self.factory.get("/login", HTTP_HOST="tenant1.auth.example.com")
+        response = wristband_auth.login(request)
+
+        # Validate redirect response - both placeholders work
+        expected_url = "https://tenant1-auth.example.com/api/v1/oauth2/authorize"
+        _, query_params = assert_redirect_no_cache(response, expected_url)
+
+        # Validate query params - redirect_uri uses {tenant_name}
+        assert_authorize_query_params(query_params, "test_client_id", "https://{tenant_name}.app.example.com/callback")
+
+        # Validate login state cookie is set
+        assert_single_login_cookie_valid(response)
+
+    def test_login_with_tenant_domain_and_custom_domain_param(self) -> None:
+        """Test login with {tenant_domain} placeholder and tenant_custom_domain param."""
+        config = AuthConfig(
+            client_id="test_client_id",
+            client_secret="test_client_secret",
+            login_state_secret=test_login_state_secret,
+            login_url="https://{tenant_domain}.auth.example.com/login",
+            redirect_uri="https://{tenant_domain}.app.example.com/callback",
+            wristband_application_vanity_domain="auth.example.com",
+            parse_tenant_from_root_domain="auth.example.com",
+            scopes=["openid", "offline_access", "email"],
+            auto_configure_enabled=False,
+        )
+        wristband_auth = WristbandAuth(config)
+
+        # tenant_custom_domain takes priority over subdomain
+        request = self.factory.get(
+            "/login?tenant_custom_domain=custom.tenant.com", HTTP_HOST="tenant1.auth.example.com"
+        )
+        response = wristband_auth.login(request)
+
+        # Should use custom domain, not tenant subdomain
+        expected_url = "https://custom.tenant.com/api/v1/oauth2/authorize"
+        _, query_params = assert_redirect_no_cache(response, expected_url)
+
+        # Validate query params
+        assert_authorize_query_params(
+            query_params, "test_client_id", "https://{tenant_domain}.app.example.com/callback"
+        )
+
+        # Validate login state cookie is set
+        assert_single_login_cookie_valid(response)
+
+    def test_login_with_tenant_domain_without_subdomain_parsing(self) -> None:
+        """Test login with {tenant_domain} placeholder using tenant_name query param (no subdomain parsing)."""
+        config = AuthConfig(
+            client_id="test_client_id",
+            client_secret="test_client_secret",
+            login_state_secret=test_login_state_secret,
+            login_url="https://auth.example.com/login",
+            redirect_uri="https://app.example.com/callback",
+            wristband_application_vanity_domain="auth.example.com",
+            # No parse_tenant_from_root_domain - uses tenant_name param
+            scopes=["openid", "offline_access", "email"],
+            auto_configure_enabled=False,
+        )
+        wristband_auth = WristbandAuth(config)
+
+        request = self.factory.get("/login?tenant_name=tenant1")
+        response = wristband_auth.login(request)
+
+        # Should use tenant_name param to build URL
+        expected_url = "https://tenant1-auth.example.com/api/v1/oauth2/authorize"
+        _, query_params = assert_redirect_no_cache(response, expected_url)
+
+        # Validate query params
+        assert_authorize_query_params(query_params, "test_client_id", "https://app.example.com/callback")
+
+        # Validate login state cookie is set
+        assert_single_login_cookie_valid(response)
+
+    def test_build_tenant_login_url_with_tenant_domain_placeholder(self) -> None:
+        """Test _build_tenant_login_url works with {tenant_domain} placeholder."""
+        config = AuthConfig(
+            client_id="test_client_id",
+            client_secret="test_client_secret",
+            login_state_secret=test_login_state_secret,
+            login_url="https://{tenant_domain}.auth.example.com/login",
+            redirect_uri="https://{tenant_domain}.app.example.com/callback",
+            wristband_application_vanity_domain="auth.example.com",
+            parse_tenant_from_root_domain="auth.example.com",
+            auto_configure_enabled=False,
+        )
+        wristband_auth = WristbandAuth(config)
+
+        result = wristband_auth._build_tenant_login_url(
+            login_url="https://{tenant_domain}.auth.example.com/login",
+            tenant_name="tenant1",
+            tenant_custom_domain=None,
+            parse_tenant_from_root_domain="auth.example.com",
+        )
+
+        # {tenant_domain} should be substituted with tenant1
+        assert result == "https://tenant1.auth.example.com/login"
+
+    def test_oauth_authorize_url_with_tenant_domain_placeholder(self) -> None:
+        """Test _get_oauth_authorize_url works with {tenant_domain} placeholder."""
+        config = AuthConfig(
+            client_id="test_client_id",
+            client_secret="test_client_secret",
+            login_state_secret=test_login_state_secret,
+            login_url="https://{tenant_domain}.auth.example.com/login",
+            redirect_uri="https://{tenant_domain}.app.example.com/callback",
+            wristband_application_vanity_domain="auth.example.com",
+            parse_tenant_from_root_domain="auth.example.com",
+            scopes=["openid", "email", "profile"],
+            auto_configure_enabled=False,
+        )
+        wristband_auth = WristbandAuth(config)
+
+        request = self.factory.get("/login")
+
+        oauth_config = OAuthAuthorizeUrlConfig(
+            client_id="test_client_id",
+            redirect_uri="https://{tenant_domain}.app.example.com/callback",
+            code_verifier="test_verifier",
+            scopes=["openid", "email", "profile"],
+            state="test_state",
+            tenant_custom_domain=None,
+            tenant_name="tenant1",
+            default_tenant_custom_domain=None,
+            default_tenant_name=None,
+            is_application_custom_domain_active=False,
+            wristband_application_vanity_domain="auth.example.com",
+        )
+
+        result = wristband_auth._get_oauth_authorize_url(request, oauth_config)
+
+        # Should use tenant_name with separator
+        expected_domain = "tenant1-auth.example.com"
+        assert result.startswith(f"https://{expected_domain}/api/v1/oauth2/authorize")
+        assert "client_id=test_client_id" in result
+        assert "state=test_state" in result
