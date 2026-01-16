@@ -2765,7 +2765,7 @@ class ApiView(JwtRequiredMixin, View):
 ### create_drf_session_auth()
 
 ```python
-def create_drf_session_auth(self) -> Type[WristbandDrfSessionAuth]:
+def create_drf_session_auth(self) -> Type[BaseAuthentication]:
 ```
 
 Creates a DRF authentication class for session-based authentication. Use this with Django REST Framework's `authentication_classes` and `IsAuthenticated` permission.
@@ -2813,7 +2813,7 @@ class ProfileAPIView(APIView):
 def create_drf_jwt_auth(
     self,
     jwt_config: Optional[JWTAuthConfig] = None
-) -> Type[WristbandDrfJwtAuth]:
+) -> Type[BaseAuthentication]:
 ```
 
 Creates a DRF authentication class for JWT bearer token authentication. Use this with Django REST Framework's `authentication_classes` and `IsAuthenticated` permission.

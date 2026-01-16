@@ -1,6 +1,6 @@
 from dataclasses import asdict, dataclass, field
 from enum import Enum
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Protocol, Tuple, Union
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Union
 
 from django.http import HttpRequest, HttpResponse
 
@@ -951,101 +951,20 @@ class JWTAuthResult:
     payload: "JWTPayload"  # Forward reference (type checkers resolve it, runtime ignores it)
 
 
-class WristbandAuthMixin(Protocol):
-    """
-    Protocol for Wristband auth mixin classes created by WristbandAuth.create_auth_mixin().
-
-    Use this for type hints when storing mixin classes created by the factory method.
-    The mixin intercepts dispatch() to enforce authentication before processing requests.
-
-    Example:
-        SessionAuthMixin: Type[WristbandAuthMixin] = wristband_auth.create_auth_mixin(
-            strategies=[AuthStrategy.SESSION]
-        )
-
-        class DashboardView(SessionAuthMixin, TemplateView):
-            template_name = 'dashboard.html'
-    """
-
-    def dispatch(self, request: HttpRequest, *args: Any, **kwargs: Any) -> HttpResponse:
+if TYPE_CHECKING:
+    # For type checkers: WristbandAuthMixin is a class that can be subclassed
+    class WristbandAuthMixin:
         """
-        Intercept view dispatch to check authentication before processing request.
+        Nominal base class for Wristband auth mixin classes created by WristbandAuth.create_auth_mixin().
 
-        Tries each configured authentication strategy in order. If any succeeds,
-        the request proceeds to the view. If all fail, handles based on the
-        configured on_unauthenticated behavior (redirect or JSON 401).
+        Use this for type hints when storing mixin classes created by the factory method.
+        The mixin intercepts dispatch() to enforce authentication before processing requests.
         """
-        ...
-
-
-class WristbandDrfSessionAuth(Protocol):
-    """
-    Protocol for DRF session authentication classes created by WristbandAuth.create_drf_session_auth().
-
-    Use this for type hints when storing DRF authentication classes created by the factory method.
-    Validates Wristband sessions and automatically refreshes expired access tokens.
-
-    Example:
-        WristbandSessionAuth: Type[WristbandDrfSessionAuth] = wristband_auth.create_drf_session_auth()
-
-        class UserProfileView(APIView):
-            authentication_classes = [WristbandSessionAuth]
-            permission_classes = [IsAuthenticated]
-    """
-
-    def authenticate(self, request: HttpRequest) -> Optional[Tuple[Any, None]]:
-        """
-        Authenticate request using Wristband session cookies.
-
-        Returns:
-            Tuple of (user, None) if authenticated, None if not authenticated.
-        """
-        ...
-
-    def authenticate_header(self, request: HttpRequest) -> str:
-        """
-        Return WWW-Authenticate header value for 401 responses.
-
-        Returns:
-            Authentication scheme name: "Session"
-        """
-        ...
-
-
-class WristbandDrfJwtAuth(Protocol):
-    """
-    Protocol for DRF JWT authentication classes created by WristbandAuth.create_drf_jwt_auth().
-
-    Use this for type hints when storing DRF authentication classes created by the factory method.
-    Validates Wristband JWTs from Authorization: Bearer <token> headers.
-
-    Example:
-        WristbandJwtAuth: Type[WristbandDrfJwtAuth] = wristband_auth.create_drf_jwt_auth()
-
-        class APIEndpoint(APIView):
-            authentication_classes = [WristbandJwtAuth]
-            permission_classes = [IsAuthenticated]
-
-            def get(self, request):
-                user_id = request.auth.payload['sub']
-                return Response({'user_id': user_id})
-    """
-
-    def authenticate(self, request: HttpRequest) -> Optional[Tuple[Any, JWTAuthResult]]:
-        """
-        Authenticate request using Wristband JWT bearer token.
-
-        Returns:
-            Tuple of (user, JWTAuthResult) if authenticated, None if not authenticated.
-            The JWTAuthResult contains both the raw token and decoded payload.
-        """
-        ...
-
-    def authenticate_header(self, request: HttpRequest) -> str:
-        """
-        Return WWW-Authenticate header value for 401 responses.
-
-        Returns:
-            Authentication scheme with realm: 'Bearer realm="api"'
-        """
-        ...
+        def dispatch(self, request: HttpRequest, *args: Any, **kwargs: Any) -> HttpResponse:
+            """
+            Intercept view dispatch to check authentication before processing request.
+            """
+            return super().dispatch(request, *args, **kwargs)  # type: ignore[misc,no-any-return]
+else:
+    # At runtime: just a marker for isinstance checks (optional)
+    WristbandAuthMixin = object

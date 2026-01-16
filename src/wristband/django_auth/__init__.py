@@ -19,8 +19,6 @@ from .models import (
     UserInfo,
     UserInfoRole,
     WristbandAuthMixin,
-    WristbandDrfJwtAuth,
-    WristbandDrfSessionAuth,
 )
 from .sessions.session_helpers import (
     WristbandSessionData,
@@ -51,8 +49,6 @@ __all__ = [
     "WristbandAuthBackend",
     "WristbandAuthMixin",
     "WristbandError",
-    "WristbandDrfJwtAuth",
-    "WristbandDrfSessionAuth",
     # sessions
     "WristbandSessionData",
     "get_session_response",
