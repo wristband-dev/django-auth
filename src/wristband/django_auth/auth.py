@@ -6,7 +6,7 @@ import secrets
 import time
 from datetime import datetime
 from functools import wraps
-from typing import Any, Callable, List, Literal, Optional, Tuple, Type, Union, cast
+from typing import TYPE_CHECKING, Any, Callable, List, Literal, Optional, Tuple, Type, Union, cast
 from urllib.parse import quote, urlencode
 
 import httpx
@@ -36,10 +36,11 @@ from .models import (
     UnauthenticatedBehavior,
     UserInfo,
     WristbandAuthMixin,
-    WristbandDrfJwtAuth,
-    WristbandDrfSessionAuth,
     WristbandTokenResponse,
 )
+
+if TYPE_CHECKING:
+    from rest_framework.authentication import BaseAuthentication
 
 _logger = logging.getLogger(__name__)
 
@@ -594,7 +595,7 @@ class WristbandAuth:
             jwt_config: Optional JWT configuration (only used if AuthStrategy.JWT in strategies)
 
         Returns:
-            Type[WristbandAuthMixin]: Mixin class for Django CBVs
+            Mixin class for Django CBVs
 
         Example:
             # In your app's wristband.py configuration
@@ -637,7 +638,7 @@ class WristbandAuth:
         if AuthStrategy.JWT in frozen_strategies:
             jwt_validator = wristband_auth._create_jwt_validator(jwt_config)
 
-        class _WristbandAuthMixinImpl:
+        class WristbandAuthMixinImpl(WristbandAuthMixin):
             """
             Mixin for Django class-based views that enforces Wristband authentication.
 
@@ -661,11 +662,11 @@ class WristbandAuth:
                     try:
                         if strategy == AuthStrategy.SESSION:
                             if wristband_auth._try_session_auth(request):
-                                return super().dispatch(request, *args, **kwargs)  # type: ignore[misc,no-any-return]
+                                return super().dispatch(request, *args, **kwargs)
 
                         elif strategy == AuthStrategy.JWT:
                             if wristband_auth._try_jwt_auth(request, jwt_validator):
-                                return super().dispatch(request, *args, **kwargs)  # type: ignore[misc,no-any-return]
+                                return super().dispatch(request, *args, **kwargs)
 
                     except Exception as e:
                         _logger.debug(f"{strategy.value} authentication failed: {e}")
@@ -678,13 +679,13 @@ class WristbandAuth:
                 else:  # JSON
                     return JsonResponse({"error": "Unauthorized"}, status=401)
 
-        return _WristbandAuthMixinImpl
+        return WristbandAuthMixinImpl
 
     #####################################################
     #  DRF AUTHENTICATION FACTORY METHODS
     #####################################################
 
-    def create_drf_session_auth(self) -> Type[WristbandDrfSessionAuth]:
+    def create_drf_session_auth(self) -> "type[BaseAuthentication]":
         """
         Create a DRF authentication class for session-based authentication.
 
@@ -697,7 +698,7 @@ class WristbandAuth:
         Requires: pip install wristband-django[drf]
 
         Returns:
-            Type[WristbandDrfSessionAuth]: DRF authentication class for session auth
+            DRF authentication class for session auth
 
         Raises:
             ImportError: If Django REST Framework is not installed
@@ -748,7 +749,7 @@ class WristbandAuth:
         except (ImportError, Exception):
             django_user_model = None
 
-        class _WristbandDrfSessionAuthImpl(BaseAuthentication):
+        class WristbandDrfSessionAuth(BaseAuthentication):
             """
             Authenticate requests using Wristband session cookies.
 
@@ -801,9 +802,9 @@ class WristbandAuth:
                 """
                 return "Session"
 
-        return _WristbandDrfSessionAuthImpl
+        return WristbandDrfSessionAuth
 
-    def create_drf_jwt_auth(self, jwt_config: Optional[JWTAuthConfig] = None) -> Type[WristbandDrfJwtAuth]:
+    def create_drf_jwt_auth(self, jwt_config: Optional[JWTAuthConfig] = None) -> "type[BaseAuthentication]":
         """
         Create a DRF authentication class for JWT bearer token authentication.
 
@@ -819,7 +820,7 @@ class WristbandAuth:
             jwt_config: Optional JWT validation configuration
 
         Returns:
-            Type[WristbandDrfJwtAuth]: DRF authentication class for JWT auth
+            DRF authentication class for JWT auth
 
         Raises:
             ImportError: If Django REST Framework is not installed
