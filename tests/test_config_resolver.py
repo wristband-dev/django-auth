@@ -696,7 +696,56 @@ class TestConfigResolverDynamicValidation:
                 resolver.get_redirect_uri()
 
             assert exc_info.value.error == "sdk_config_invalid"
-            assert "missing required field: redirect_uri" in exc_info.value.error_description
+            assert (
+                "The [redirect_uri] could not be resolved. Provide it explicitly in your SDK config "
+                "or ensure your Wristband OAuth2 Client has a single redirect URI configured."
+                in exc_info.value.error_description
+            )
+
+    def test_validate_null_redirect_uri_in_sdk_config_without_manual_override(self):
+        """Test validation fails when SDK config returns null redirect_uri and no manual override provided."""
+        null_redirect_sdk_config = SdkConfiguration(
+            login_url="https://sdk.example.com/login",
+            redirect_uri=None,
+            is_application_custom_domain_active=False,
+        )
+
+        with patch("wristband.django_auth.config_resolver.WristbandApiClient") as mock_client_class:
+            mock_client = Mock()
+            mock_client.get_sdk_configuration = Mock(return_value=null_redirect_sdk_config)
+            mock_client_class.return_value = mock_client
+
+            resolver = ConfigResolver(self.config)
+
+            with pytest.raises(WristbandError) as exc_info:
+                resolver.get_redirect_uri()
+
+            assert exc_info.value.error == "sdk_config_invalid"
+            assert "The [redirect_uri] could not be resolved" in exc_info.value.error_description
+
+    def test_manual_redirect_uri_overrides_null_sdk_redirect_uri(self):
+        """Test that manual redirect_uri succeeds when SDK config returns null (multiple redirect URIs registered)."""
+        null_redirect_sdk_config = SdkConfiguration(
+            login_url="https://sdk.example.com/login",
+            redirect_uri=None,
+            is_application_custom_domain_active=False,
+        )
+
+        config = AuthConfig(
+            client_id="test_client",
+            client_secret="test_secret",
+            wristband_application_vanity_domain="test.wristband.dev",
+            redirect_uri="https://manual.example.com/callback",
+        )
+
+        with patch("wristband.django_auth.config_resolver.WristbandApiClient") as mock_client_class:
+            mock_client = Mock()
+            mock_client.get_sdk_configuration = Mock(return_value=null_redirect_sdk_config)
+            mock_client_class.return_value = mock_client
+
+            resolver = ConfigResolver(config)
+            result = resolver.get_redirect_uri()
+            assert result == "https://manual.example.com/callback"
 
     def test_validate_resolved_config_with_tenant_name(self):
         """Test validation of resolved config with tenant name parsing."""

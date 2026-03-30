@@ -130,8 +130,8 @@ class TestSdkConfiguration:
         assert config.custom_application_login_page_url == "https://custom.example.com/login"
         assert config.login_url_tenant_domain_suffix == ".tenant.wristband.dev"
 
-    def test_sdk_configuration_minimal_required_fields(self):
-        """Test SdkConfiguration with only required fields."""
+    def test_sdk_configuration_minimal_filds(self):
+        """Test SdkConfiguration with only minimal fields."""
         config = SdkConfiguration(
             login_url="https://auth.wristband.dev/api/v1/oauth2/authorize",
             redirect_uri="https://example.com/callback",
@@ -143,6 +143,17 @@ class TestSdkConfiguration:
         assert config.is_application_custom_domain_active is False
         assert config.custom_application_login_page_url is None
         assert config.login_url_tenant_domain_suffix is None
+
+    def test_sdk_configuration_from_api_response_null_redirect_uri(self):
+        """Test SdkConfiguration.from_api_response when redirectUri is null (multiple redirect URIs registered)."""
+        api_response = {
+            "loginUrl": "https://auth.example.com/login",
+            "redirectUri": None,
+            "isApplicationCustomDomainActive": False,
+        }
+        config = SdkConfiguration.from_api_response(api_response)
+        assert config.login_url == "https://auth.example.com/login"
+        assert config.redirect_uri is None
 
     def test_sdk_configuration_from_api_response(self):
         """Test SdkConfiguration.from_api_response method."""
@@ -166,13 +177,12 @@ class TestSdkConfiguration:
         """Test SdkConfiguration.from_api_response with minimal response."""
         api_response = {
             "loginUrl": "https://auth.wristband.dev/api/v1/oauth2/authorize",
-            "redirectUri": "https://example.com/callback",
         }
 
         config = SdkConfiguration.from_api_response(api_response)
 
         assert config.login_url == "https://auth.wristband.dev/api/v1/oauth2/authorize"
-        assert config.redirect_uri == "https://example.com/callback"
+        assert config.redirect_uri is None
         assert config.is_application_custom_domain_active is False  # Default from .get()
         assert config.custom_application_login_page_url is None
         assert config.login_url_tenant_domain_suffix is None
