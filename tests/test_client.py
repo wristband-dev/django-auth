@@ -232,7 +232,6 @@ class TestWristbandApiClientGetSdkConfiguration:
         """Test handling of malformed SDK configuration response."""
         mock_response = Mock()
         mock_response.json.return_value = {
-            "loginUrl": "https://auth.example.com/login",
             # Missing required fields to trigger SdkConfiguration.from_api_response error
         }
         mock_response.raise_for_status = Mock()

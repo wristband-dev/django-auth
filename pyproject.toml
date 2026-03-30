@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "wristband-django-auth"
-version = "1.0.2"
+version = "1.1.0"
 description = "SDK for integrating your Python Django application with Wristband. Handles user authentication, session management, and token management. Optional Django Rest Framework (DRF) support included."
 readme = "README_PYPI.md"
 license = "MIT"
@@ -13,10 +13,10 @@ authors = [
 ]
 requires-python = ">=3.10"
 dependencies = [
-    "cryptography>=44.0.3",
+    "cryptography>=46.0.6",
     "Django>=4.2",
     "httpx>=0.24.0",
-    "wristband-python-jwt==0.1.1",
+    "wristband-python-jwt==0.1.2",
 ]
 keywords = [
     "api",

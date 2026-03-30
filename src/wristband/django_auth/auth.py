@@ -100,6 +100,8 @@ class WristbandAuth:
         Request to begin the Authorization Code flow.
 
         The incoming HTTP request can include Wristband-specific query parameters:
+        - idp_hint: A hint to Wristband about which identity provider the user should be redirected to. When present,
+          Wristband will bypass the Tenant Login Page and send the user directly to the specified identity provider.
         - login_hint: A hint about the user's preferred login identifier. This is passed as a query
           parameter in the redirect to the Authorize URL.
         - return_url: The URL to redirect the user to after authentication.
@@ -1199,6 +1201,10 @@ class WristbandAuth:
         if len(login_hint_list) > 1:
             raise TypeError("More than one [login_hint] query parameter was encountered")
 
+        idp_hint_list = request.GET.getlist("idp_hint")
+        if len(idp_hint_list) > 1:
+            raise TypeError("More than one [idp_hint] query parameter was encountered")
+
         # Assemble necessary query params for authorization request
         query_params = {
             "client_id": config.client_id,
@@ -1212,6 +1218,8 @@ class WristbandAuth:
         }
         if login_hint_list:
             query_params["login_hint"] = login_hint_list[0]
+        if idp_hint_list:
+            query_params["idp_hint"] = idp_hint_list[0]
 
         # Separator changes to a period if using an app-level custom domain with tenant subdomains
         separator: Union[Literal["."], Literal["-"]] = "." if config.is_application_custom_domain_active else "-"

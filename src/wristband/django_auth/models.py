@@ -76,8 +76,8 @@ class SdkConfiguration:
     """
 
     login_url: str
-    redirect_uri: str
     is_application_custom_domain_active: bool
+    redirect_uri: Optional[str] = None
     custom_application_login_page_url: Optional[str] = None
     login_url_tenant_domain_suffix: Optional[str] = None
 
@@ -94,7 +94,7 @@ class SdkConfiguration:
         """
         return SdkConfiguration(
             login_url=response["loginUrl"],
-            redirect_uri=response["redirectUri"],
+            redirect_uri=response.get("redirectUri"),
             is_application_custom_domain_active=response.get("isApplicationCustomDomainActive", False),
             custom_application_login_page_url=response.get("customApplicationLoginPageUrl"),
             login_url_tenant_domain_suffix=response.get("loginUrlTenantDomainSuffix"),
