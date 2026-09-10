@@ -199,9 +199,8 @@ class TestWristbandAuthRefreshTokenIfExpired:
             assert "invalid_refresh_token" in error_message
             assert "Invalid Refresh Token" in error_message
 
-    @patch("wristband.django_auth.auth.time.sleep")
-    def test_refresh_token_if_expired_http_error_5xx_with_retries(self, mock_sleep) -> None:
-        """Test 5xx HTTP errors are retried up to 3 times."""
+    def test_refresh_token_if_expired_http_error_5xx(self) -> None:
+        """Test a 5xx HTTP error surfaces as unexpected_error without retrying at this layer."""
         refresh_token = "valid_refresh_token"
         expires_at = int((datetime.now() - timedelta(hours=1)).timestamp() * 1000)
 
@@ -221,84 +220,42 @@ class TestWristbandAuthRefreshTokenIfExpired:
             error_message = str(exc_info.value)
             assert "unexpected_error" in error_message
             assert "Unexpected Error" in error_message
-            # Should be called 3 times (initial + 2 retries)
-            assert mock_refresh.call_count == 3
-            # Should sleep twice (between retries)
-            assert mock_sleep.call_count == 2
-            mock_sleep.assert_called_with(0.1)  # _token_refresh_retry_timeout
+            # Retrying transient failures is handled one layer down by WristbandApiClient
+            # (see with_retry() in retry.py), so this layer only calls the API once.
+            assert mock_refresh.call_count == 1
 
-    @patch("wristband.django_auth.auth.time.sleep")
-    @patch("wristband.django_auth.auth.time.time")
-    def test_refresh_token_if_expired_retry_then_success(self, mock_time, mock_sleep) -> None:
-        """Test successful refresh after initial failure."""
-        mock_time.return_value = 1640995200.0
-
-        refresh_token = "valid_refresh_token"
-        expires_at = int((datetime.now() - timedelta(hours=1)).timestamp() * 1000)
-
-        # Create a mock 500 error for first attempt
-        mock_response = Mock()
-        mock_response.status_code = 500
-
-        mock_http_error = httpx.HTTPStatusError("500 Internal Server Error", request=Mock(), response=mock_response)
-        mock_http_error.response = mock_response
-
-        # Success response for second attempt
-        mock_token_response = WristbandTokenResponse(
-            access_token="new_access_token",
-            id_token="new_id_token",
-            expires_in=3600,
-            refresh_token="new_refresh_token",
-            token_type="Bearer",
-            scope="openid offline_access email",
-        )
-
-        with patch.object(self.wristband_auth._wristband_api, "refresh_token") as mock_refresh:
-            mock_refresh.side_effect = [mock_http_error, mock_token_response]
-
-            result = self.wristband_auth.refresh_token_if_expired(refresh_token, expires_at)
-
-            assert result is not None
-            assert result.access_token == "new_access_token"
-            assert mock_refresh.call_count == 2
-            assert mock_sleep.call_count == 1
-
-    def test_refresh_token_if_expired_http_error_no_response(self) -> None:
-        """Test HTTP error without response object is retried."""
+    def test_refresh_token_if_expired_network_error(self) -> None:
+        """Test a network error surfaces as unexpected_error without retrying at this layer."""
         refresh_token = "valid_refresh_token"
         expires_at = int((datetime.now() - timedelta(hours=1)).timestamp() * 1000)
 
         mock_http_error = httpx.RequestError("Network error")
 
         with patch.object(self.wristband_auth._wristband_api, "refresh_token") as mock_refresh:
-            with patch("wristband.django_auth.auth.time.sleep"):
-                mock_refresh.side_effect = mock_http_error
+            mock_refresh.side_effect = mock_http_error
 
-                with pytest.raises(WristbandError) as exc_info:
-                    self.wristband_auth.refresh_token_if_expired(refresh_token, expires_at)
+            with pytest.raises(WristbandError) as exc_info:
+                self.wristband_auth.refresh_token_if_expired(refresh_token, expires_at)
 
-                error_message = str(exc_info.value)
-                assert "unexpected_error" in error_message
-                # Should be retried 3 times
-                assert mock_refresh.call_count == 3
+            error_message = str(exc_info.value)
+            assert "unexpected_error" in error_message
+            assert mock_refresh.call_count == 1
 
-    def test_refresh_token_if_expired_non_http_exception_with_retries(self) -> None:
-        """Test non-HTTP exceptions are retried."""
+    def test_refresh_token_if_expired_non_http_exception(self) -> None:
+        """Test an unrecognized exception surfaces as unexpected_error without retrying here."""
         refresh_token = "valid_refresh_token"
         expires_at = int((datetime.now() - timedelta(hours=1)).timestamp() * 1000)
 
         with patch.object(self.wristband_auth._wristband_api, "refresh_token") as mock_refresh:
-            with patch("wristband.django_auth.auth.time.sleep"):
-                # Use a generic Exception instead of ConnectionError
-                mock_refresh.side_effect = Exception("Generic error")
+            # Use a generic Exception instead of ConnectionError
+            mock_refresh.side_effect = Exception("Generic error")
 
-                with pytest.raises(WristbandError) as exc_info:
-                    self.wristband_auth.refresh_token_if_expired(refresh_token, expires_at)
+            with pytest.raises(WristbandError) as exc_info:
+                self.wristband_auth.refresh_token_if_expired(refresh_token, expires_at)
 
-                error_message = str(exc_info.value)
-                assert "unexpected_error" in error_message
-                # Should be retried 3 times
-                assert mock_refresh.call_count == 3
+            error_message = str(exc_info.value)
+            assert "unexpected_error" in error_message
+            assert mock_refresh.call_count == 1
 
     def test_refresh_token_if_expired_token_expiration_buffer_calculation(self) -> None:
         """Test token expiry buffer is correctly applied to expires_in."""

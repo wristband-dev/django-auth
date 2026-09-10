@@ -141,7 +141,12 @@ class TestWristbandAuthLogin:
             default_tenant_custom_domain="default.custom.com",
         )
 
-        response = self.wristband_auth.login(request, login_config)
+        with patch.object(
+            self.wristband_auth._wristband_api, "validate_tenant_custom_domain", return_value=True
+        ) as mock_validate:
+            response = self.wristband_auth.login(request, login_config)
+
+        mock_validate.assert_called_once_with("tenantA.custom.com")
 
         # Validate redirect response
         expected_url = "https://tenantA.custom.com/api/v1/oauth2/authorize"
@@ -1275,7 +1280,8 @@ class TestWristbandAuthLoginBackwardCompatibility:
         request = self.factory.get(
             "/login?tenant_custom_domain=custom.tenant.com", HTTP_HOST="tenant1.auth.example.com"
         )
-        response = wristband_auth.login(request)
+        with patch.object(wristband_auth._wristband_api, "validate_tenant_custom_domain", return_value=True):
+            response = wristband_auth.login(request)
 
         # Should use custom domain, not tenant subdomain
         expected_url = "https://custom.tenant.com/api/v1/oauth2/authorize"

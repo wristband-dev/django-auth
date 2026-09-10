@@ -48,7 +48,10 @@ class TestWristbandAuthLogout:
             redirect_url="https://app.example.com/logged-out",
         )
 
-        with patch.object(self.wristband_auth._wristband_api, "revoke_refresh_token"):
+        with (
+            patch.object(self.wristband_auth._wristband_api, "revoke_refresh_token"),
+            patch.object(self.wristband_auth._wristband_api, "validate_tenant_custom_domain", return_value=True),
+        ):
             response = self.wristband_auth.logout(request, logout_config)
 
         # Should use config tenant custom domain (priority 1)
@@ -63,7 +66,10 @@ class TestWristbandAuthLogout:
         request = self.factory.get("/logout?tenant_name=tenant1&tenant_custom_domain=tenant1.custom.com")
         logout_config = LogoutConfig(tenant_name="config-tenant", redirect_url="https://app.example.com/logged-out")
 
-        with patch.object(self.wristband_auth._wristband_api, "revoke_refresh_token"):
+        with (
+            patch.object(self.wristband_auth._wristband_api, "revoke_refresh_token"),
+            patch.object(self.wristband_auth._wristband_api, "validate_tenant_custom_domain", return_value=True),
+        ):
             response = self.wristband_auth.logout(request, logout_config)
 
         # Should use config tenant name (priority 2)
@@ -78,7 +84,10 @@ class TestWristbandAuthLogout:
         request = self.factory.get("/logout?tenant_name=tenant1&tenant_custom_domain=tenant1.custom.com")
         logout_config = LogoutConfig()
 
-        with patch.object(self.wristband_auth._wristband_api, "revoke_refresh_token"):
+        with (
+            patch.object(self.wristband_auth._wristband_api, "revoke_refresh_token"),
+            patch.object(self.wristband_auth._wristband_api, "validate_tenant_custom_domain", return_value=True),
+        ):
             response = self.wristband_auth.logout(request, logout_config)
 
         # Should use query tenant custom domain (priority 3)
@@ -373,7 +382,10 @@ class TestWristbandAuthLogout:
         request = self.factory.get("/logout?tenant_name=tenant1&tenant_custom_domain=tenant1.custom.com")
         logout_config = LogoutConfig(state="custom_domain_state")
 
-        with patch.object(self.wristband_auth._wristband_api, "revoke_refresh_token"):
+        with (
+            patch.object(self.wristband_auth._wristband_api, "revoke_refresh_token"),
+            patch.object(self.wristband_auth._wristband_api, "validate_tenant_custom_domain", return_value=True),
+        ):
             response = self.wristband_auth.logout(request, logout_config)
 
         expected_url = "https://tenant1.custom.com/api/v1/logout?client_id=test_client_id" "&state=custom_domain_state"

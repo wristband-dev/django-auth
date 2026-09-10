@@ -761,6 +761,25 @@ class WristbandTokenResponse:
         )
 
 
+@dataclass
+class ValidateTenantCustomDomainResponse:
+    """
+    Represents the response from Wristband's tenant custom domain validation endpoint.
+
+    Attributes:
+        valid: Whether the tenant custom domain is verified and belongs to your application.
+    """
+
+    valid: bool
+
+    @staticmethod
+    def from_api_response(response: dict[str, Any]) -> "ValidateTenantCustomDomainResponse":
+        """
+        Creates a ValidateTenantCustomDomainResponse instance from an API response dictionary.
+        """
+        return ValidateTenantCustomDomainResponse(valid=bool(response.get("valid", False)))
+
+
 ########################################
 # LOGOUT MODELS
 ########################################

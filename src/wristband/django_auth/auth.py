@@ -60,8 +60,6 @@ class WristbandAuth:
     _login_state_cookie_separator: str = "#"
     _return_url_char_max_len = 450
     _tenant_placeholder_pattern = re.compile(r"\{tenant_(?:domain|name)\}")
-    _token_refresh_retries = 2
-    _token_refresh_retry_timeout = 0.1  # 100ms
 
     def __init__(self, auth_config: AuthConfig) -> None:
         self._config_resolver = ConfigResolver(auth_config)
@@ -71,6 +69,24 @@ class WristbandAuth:
             client_secret=self._config_resolver.get_client_secret(),
         )
         self._login_state_encryptor = DataEncryptor(secret_key=self._config_resolver.get_login_state_secret())
+
+    def _resolve_valid_tenant_custom_domain(self, tenant_custom_domain: Optional[str]) -> Optional[str]:
+        """
+        Resolves a tenant custom domain to itself when it is verified and belongs to your
+        Wristband application. Resolves to None otherwise, so the caller skips over it and
+        falls through to the next domain in its resolution precedence order.
+
+        Args:
+            tenant_custom_domain (Optional[str]): The tenant custom domain to validate.
+
+        Returns:
+            Optional[str]: The tenant custom domain when valid, otherwise None.
+        """
+        if not tenant_custom_domain:
+            return None
+
+        is_valid = self._wristband_api.validate_tenant_custom_domain(tenant_custom_domain)
+        return tenant_custom_domain if is_valid else None
 
     #################################
     #  DISCOVER
@@ -132,7 +148,9 @@ class WristbandAuth:
 
         # Determine tenant domain
         tenant_name = self._resolve_tenant_name(request, parse_tenant_from_root_domain)
-        tenant_custom_domain = self._resolve_tenant_custom_domain_param(request)
+        tenant_custom_domain = self._resolve_valid_tenant_custom_domain(
+            self._resolve_tenant_custom_domain_param(request)
+        )
         default_tenant_custom_domain: Optional[str] = config.default_tenant_custom_domain
         default_tenant_name: Optional[str] = config.default_tenant_name
 
@@ -231,6 +249,9 @@ class WristbandAuth:
 
         if not param_state:
             raise TypeError("Invalid query parameter [state] passed from Wristband during callback")
+
+        # An invalid tenant custom domain is skipped over rather than failing the callback.
+        tenant_custom_domain_param = self._resolve_valid_tenant_custom_domain(tenant_custom_domain_param)
 
         # Resolve and validate tenant name
         resolved_tenant_name = self._resolve_tenant_name(request, parse_tenant_from_root_domain)
@@ -389,7 +410,9 @@ class WristbandAuth:
 
         # Get host and determine tenant domain
         tenant_name = self._resolve_tenant_name(request, parse_tenant_from_root_domain)
-        tenant_custom_domain = self._resolve_tenant_custom_domain_param(request)
+        tenant_custom_domain = self._resolve_valid_tenant_custom_domain(
+            self._resolve_tenant_custom_domain_param(request)
+        )
 
         # Build logout URL components
         separator = "." if is_application_custom_domain_active else "-"
@@ -461,50 +484,38 @@ class WristbandAuth:
         if expires_at > int(datetime.now().timestamp() * 1000):
             return None
 
-        # Try up to 3 times to perform a token refresh
-        for attempt in range(self._token_refresh_retries + 1):
-            try:
-                token_response: WristbandTokenResponse = self._wristband_api.refresh_token(refresh_token)
+        # Retrying on transient failures (5xx errors, network errors) is already handled one
+        # layer down by WristbandApiClient -- see with_retry() in retry.py. By the time an
+        # error surfaces here, retries (if any applied) have already been exhausted.
+        try:
+            token_response: WristbandTokenResponse = self._wristband_api.refresh_token(refresh_token)
 
-                # Calculate token expiry buffer
-                expires_in = token_response.expires_in - (token_expiration_buffer or 0)
-                expires_at = int((time.time() + expires_in) * 1000)
+            # Calculate token expiry buffer
+            expires_in = token_response.expires_in - (token_expiration_buffer or 0)
+            expires_at = int((time.time() + expires_in) * 1000)
 
-                return TokenData(
-                    access_token=token_response.access_token,
-                    id_token=token_response.id_token,
-                    expires_in=expires_in,
-                    expires_at=expires_at,
-                    refresh_token=token_response.refresh_token,
-                )
-            except InvalidGrantError as e:
-                # Do not retry, bail immediately
-                raise e
-            except httpx.HTTPStatusError as e:
-                # Only 4xx errors should short-circuit the retry loop early.
-                if e.response is not None and 400 <= e.response.status_code < 500:
-                    try:
-                        error_description = e.response.json().get("error_description", "Invalid Refresh Token")
-                    except Exception:
-                        error_description = "Invalid Refresh Token"
-                    raise WristbandError("invalid_refresh_token", error_description)
+            return TokenData(
+                access_token=token_response.access_token,
+                id_token=token_response.id_token,
+                expires_in=expires_in,
+                expires_at=expires_at,
+                refresh_token=token_response.refresh_token,
+            )
+        except InvalidGrantError as e:
+            # Do not retry, bail immediately
+            raise e
+        except httpx.HTTPStatusError as e:
+            # Any remaining 4xx error also indicates an invalid refresh token.
+            if e.response is not None and 400 <= e.response.status_code < 500:
+                try:
+                    error_description = e.response.json().get("error_description", "Invalid Refresh Token")
+                except Exception:
+                    error_description = "Invalid Refresh Token"
+                raise WristbandError("invalid_refresh_token", error_description)
 
-                # On last attempt, raise the error.
-                if attempt == self._token_refresh_retries:
-                    raise WristbandError("unexpected_error", "Unexpected Error")
-
-                # Wait before retrying.
-                time.sleep(self._token_refresh_retry_timeout)
-            except Exception:
-                # Handle all other exceptions with retry logic. On last attempt, raise the error.
-                if attempt == self._token_refresh_retries:
-                    raise WristbandError("unexpected_error", "Unexpected Error")
-
-                # Wait before retrying.
-                time.sleep(self._token_refresh_retry_timeout)
-
-        # Safety check that should never happen
-        raise WristbandError("unexpected_error", "Unexpected Error")
+            raise WristbandError("unexpected_error", "Unexpected Error")
+        except Exception:
+            raise WristbandError("unexpected_error", "Unexpected Error")
 
     #####################################################
     #  CREATE AUTH DECORATOR
