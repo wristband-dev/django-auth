@@ -51,7 +51,7 @@ class TestWristbandApiClientInit:
     def test_init_none_domain_raises_valueerror(self):
         """Test that None domain raises ValueError."""
         with pytest.raises(ValueError, match="Wristband application vanity domain is required"):
-            WristbandApiClient(None, "client_id", "client_secret")  # type:ignore
+            WristbandApiClient(None, "client_id", "client_secret")  # type: ignore
 
     def test_init_empty_client_id_raises_valueerror(self):
         """Test that empty client_id raises ValueError."""
@@ -66,7 +66,7 @@ class TestWristbandApiClientInit:
     def test_init_none_client_id_raises_valueerror(self):
         """Test that None client_id raises ValueError."""
         with pytest.raises(ValueError, match="Client ID is required"):
-            WristbandApiClient("auth.example.com", None, "client_secret")  # type:ignore
+            WristbandApiClient("auth.example.com", None, "client_secret")  # type: ignore
 
     def test_init_empty_client_secret_raises_valueerror(self):
         """Test that empty client_secret raises ValueError."""
@@ -81,7 +81,7 @@ class TestWristbandApiClientInit:
     def test_init_none_client_secret_raises_valueerror(self):
         """Test that None client_secret raises ValueError."""
         with pytest.raises(ValueError, match="Client secret is required"):
-            WristbandApiClient("auth.example.com", "client_id", None)  # type:ignore
+            WristbandApiClient("auth.example.com", "client_id", None)  # type: ignore
 
     @patch("wristband.django_auth.client.httpx.Client")
     def test_init_base64_encoding(self, mock_client_class):
@@ -429,7 +429,7 @@ class TestWristbandApiClientGetTokens:
         client = WristbandApiClient("auth.example.com", "client_id", "client_secret")
 
         with pytest.raises(ValueError, match="Authorization code is required"):
-            client.get_tokens(None, "https://app.com/callback", "code_verifier")  # type:ignore
+            client.get_tokens(None, "https://app.com/callback", "code_verifier")  # type: ignore
 
     @patch("wristband.django_auth.client.httpx.Client")
     def test_get_tokens_empty_redirect_uri_raises_valueerror(self, mock_client_class):
@@ -462,7 +462,7 @@ class TestWristbandApiClientGetTokens:
         client = WristbandApiClient("auth.example.com", "client_id", "client_secret")
 
         with pytest.raises(ValueError, match="Redirect URI is required"):
-            client.get_tokens("auth_code", None, "code_verifier")  # type:ignore
+            client.get_tokens("auth_code", None, "code_verifier")  # type: ignore
 
     @patch("wristband.django_auth.client.httpx.Client")
     def test_get_tokens_empty_code_verifier_raises_valueerror(self, mock_client_class):
@@ -495,7 +495,7 @@ class TestWristbandApiClientGetTokens:
         client = WristbandApiClient("auth.example.com", "client_id", "client_secret")
 
         with pytest.raises(ValueError, match="Code verifier is required"):
-            client.get_tokens("auth_code", "https://app.com/callback", None)  # type:ignore
+            client.get_tokens("auth_code", "https://app.com/callback", None)  # type: ignore
 
     @patch("wristband.django_auth.client.httpx.Client")
     def test_get_tokens_invalid_grant_error(self, mock_client_class):

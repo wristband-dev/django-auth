@@ -979,11 +979,13 @@ if TYPE_CHECKING:
         Use this for type hints when storing mixin classes created by the factory method.
         The mixin intercepts dispatch() to enforce authentication before processing requests.
         """
+
         def dispatch(self, request: HttpRequest, *args: Any, **kwargs: Any) -> HttpResponse:
             """
             Intercept view dispatch to check authentication before processing request.
             """
             return super().dispatch(request, *args, **kwargs)  # type: ignore[misc,no-any-return]
+
 else:
     # At runtime: just a marker for isinstance checks (optional)
     WristbandAuthMixin = object

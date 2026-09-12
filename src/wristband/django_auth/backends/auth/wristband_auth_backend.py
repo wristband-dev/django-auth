@@ -1,4 +1,4 @@
-from typing import Any, Optional
+from typing import Any, Optional, cast
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
@@ -240,7 +240,7 @@ class WristbandAuthBackend(ModelBackend):
 
         # Populate user fields via adapter
         adapter = self.get_adapter()
-        user = adapter.populate_user(django_user, callback_data, **kwargs)  # type: ignore[arg-type]
+        user = adapter.populate_user(django_user, callback_data, **kwargs)
         user.save()
 
         return user
@@ -283,6 +283,6 @@ class WristbandAuthBackend(ModelBackend):
             - The method is defined in ModelBackend but documented here for clarity
         """
         try:
-            return User.objects.get(pk=user_id)
+            return cast(Optional[AbstractBaseUser], User.objects.get(pk=user_id))
         except User.DoesNotExist:
             return None
