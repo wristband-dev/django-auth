@@ -70,24 +70,6 @@ class WristbandAuth:
         )
         self._login_state_encryptor = DataEncryptor(secret_key=self._config_resolver.get_login_state_secret())
 
-    def _resolve_valid_tenant_custom_domain(self, tenant_custom_domain: Optional[str]) -> Optional[str]:
-        """
-        Resolves a tenant custom domain to itself when it is verified and belongs to your
-        Wristband application. Resolves to None otherwise, so the caller skips over it and
-        falls through to the next domain in its resolution precedence order.
-
-        Args:
-            tenant_custom_domain (Optional[str]): The tenant custom domain to validate.
-
-        Returns:
-            Optional[str]: The tenant custom domain when valid, otherwise None.
-        """
-        if not tenant_custom_domain:
-            return None
-
-        is_valid = self._wristband_api.validate_tenant_custom_domain(tenant_custom_domain)
-        return tenant_custom_domain if is_valid else None
-
     #################################
     #  DISCOVER
     #################################
@@ -1138,6 +1120,24 @@ class WristbandAuth:
     def _resolve_tenant_custom_domain_param(self, request: HttpRequest) -> Optional[str]:
         """Resolve tenant custom domain from request"""
         return self._assert_single_param(request, "tenant_custom_domain")
+
+    def _resolve_valid_tenant_custom_domain(self, tenant_custom_domain: Optional[str]) -> Optional[str]:
+        """
+        Resolves a tenant custom domain to itself when it is verified and belongs to your
+        Wristband application. Resolves to None otherwise, so the caller skips over it and
+        falls through to the next domain in its resolution precedence order.
+
+        Args:
+            tenant_custom_domain (Optional[str]): The tenant custom domain to validate.
+
+        Returns:
+            Optional[str]: The tenant custom domain when valid, otherwise None.
+        """
+        if not tenant_custom_domain:
+            return None
+
+        is_valid = self._wristband_api.validate_tenant_custom_domain(tenant_custom_domain)
+        return tenant_custom_domain if is_valid else None
 
     def _assert_single_param(self, request: HttpRequest, param: str) -> Optional[str]:
         """Assert single query parameter"""
