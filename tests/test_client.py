@@ -7,6 +7,7 @@ import pytest
 from wristband.django_auth.client import WristbandApiClient
 from wristband.django_auth.exceptions import InvalidGrantError, WristbandError
 from wristband.django_auth.models import SdkConfiguration, UserInfo, WristbandTokenResponse
+from wristband.django_auth.retry import MAX_API_RETRY_ATTEMPTS
 
 
 class TestWristbandApiClientInit:
@@ -50,7 +51,7 @@ class TestWristbandApiClientInit:
     def test_init_none_domain_raises_valueerror(self):
         """Test that None domain raises ValueError."""
         with pytest.raises(ValueError, match="Wristband application vanity domain is required"):
-            WristbandApiClient(None, "client_id", "client_secret")  # type:ignore
+            WristbandApiClient(None, "client_id", "client_secret")  # type: ignore
 
     def test_init_empty_client_id_raises_valueerror(self):
         """Test that empty client_id raises ValueError."""
@@ -65,7 +66,7 @@ class TestWristbandApiClientInit:
     def test_init_none_client_id_raises_valueerror(self):
         """Test that None client_id raises ValueError."""
         with pytest.raises(ValueError, match="Client ID is required"):
-            WristbandApiClient("auth.example.com", None, "client_secret")  # type:ignore
+            WristbandApiClient("auth.example.com", None, "client_secret")  # type: ignore
 
     def test_init_empty_client_secret_raises_valueerror(self):
         """Test that empty client_secret raises ValueError."""
@@ -80,7 +81,7 @@ class TestWristbandApiClientInit:
     def test_init_none_client_secret_raises_valueerror(self):
         """Test that None client_secret raises ValueError."""
         with pytest.raises(ValueError, match="Client secret is required"):
-            WristbandApiClient("auth.example.com", "client_id", None)  # type:ignore
+            WristbandApiClient("auth.example.com", "client_id", None)  # type: ignore
 
     @patch("wristband.django_auth.client.httpx.Client")
     def test_init_base64_encoding(self, mock_client_class):
@@ -158,6 +159,7 @@ class TestWristbandApiClientGetSdkConfiguration:
     def test_get_sdk_configuration_http_error(self, mock_client_class):
         """Test handling of HTTP errors in SDK configuration retrieval."""
         mock_response = Mock()
+        mock_response.status_code = 404
         mock_response.raise_for_status.side_effect = httpx.HTTPStatusError(
             "404 Not Found", request=Mock(), response=mock_response
         )
@@ -427,7 +429,7 @@ class TestWristbandApiClientGetTokens:
         client = WristbandApiClient("auth.example.com", "client_id", "client_secret")
 
         with pytest.raises(ValueError, match="Authorization code is required"):
-            client.get_tokens(None, "https://app.com/callback", "code_verifier")  # type:ignore
+            client.get_tokens(None, "https://app.com/callback", "code_verifier")  # type: ignore
 
     @patch("wristband.django_auth.client.httpx.Client")
     def test_get_tokens_empty_redirect_uri_raises_valueerror(self, mock_client_class):
@@ -460,7 +462,7 @@ class TestWristbandApiClientGetTokens:
         client = WristbandApiClient("auth.example.com", "client_id", "client_secret")
 
         with pytest.raises(ValueError, match="Redirect URI is required"):
-            client.get_tokens("auth_code", None, "code_verifier")  # type:ignore
+            client.get_tokens("auth_code", None, "code_verifier")  # type: ignore
 
     @patch("wristband.django_auth.client.httpx.Client")
     def test_get_tokens_empty_code_verifier_raises_valueerror(self, mock_client_class):
@@ -493,7 +495,7 @@ class TestWristbandApiClientGetTokens:
         client = WristbandApiClient("auth.example.com", "client_id", "client_secret")
 
         with pytest.raises(ValueError, match="Code verifier is required"):
-            client.get_tokens("auth_code", "https://app.com/callback", None)  # type:ignore
+            client.get_tokens("auth_code", "https://app.com/callback", None)  # type: ignore
 
     @patch("wristband.django_auth.client.httpx.Client")
     def test_get_tokens_invalid_grant_error(self, mock_client_class):
@@ -861,7 +863,8 @@ class TestWristbandApiClientRefreshToken:
         with pytest.raises(httpx.HTTPStatusError):
             client.refresh_token("refresh_token_123")
 
-        mock_response.raise_for_status.assert_called_once()
+        # A 5xx is transient, so the request is retried up to the max attempts before failing.
+        assert mock_client_instance.post.call_count == MAX_API_RETRY_ATTEMPTS
 
     @patch("wristband.django_auth.client.httpx.Client")
     def test_refresh_token_non_200_status_code(self, mock_client_class):
@@ -915,6 +918,7 @@ class TestWristbandApiClientRevokeRefreshToken:
     def test_revoke_refresh_token_http_error(self, mock_client_class):
         """Test handling of HTTP errors during revocation."""
         mock_response = Mock()
+        mock_response.status_code = 400
         mock_response.raise_for_status.side_effect = httpx.HTTPStatusError(
             "400 Bad Request", request=Mock(), response=mock_response
         )
@@ -1015,7 +1019,12 @@ class TestWristbandApiClientEdgeCases:
 
     @patch("wristband.django_auth.client.httpx.Client")
     def test_json_decode_error_handling(self, mock_client_class):
-        """Test handling of invalid JSON responses."""
+        """Test that an error response with a non-JSON body surfaces as a WristbandError.
+
+        Regression: an error body that isn't JSON (e.g. a plain-text or HTML error page from
+        a proxy/CDN) must not surface as a raw JSON decoding error, otherwise the retry logic
+        would misread it as a transient failure and retry a non-retryable 4xx.
+        """
         mock_response = Mock()
         mock_response.status_code = 400
         mock_response.json.side_effect = ValueError("Invalid JSON")
@@ -1026,9 +1035,13 @@ class TestWristbandApiClientEdgeCases:
 
         client = WristbandApiClient("auth.example.com", "client_id", "client_secret")
 
-        # Should raise the JSON decode error
-        with pytest.raises(ValueError, match="Invalid JSON"):
+        with pytest.raises(WristbandError) as exc_info:
             client.get_tokens("code", "uri", "verifier")
+
+        assert exc_info.value.get_error() == "unknown_error"
+        assert exc_info.value.get_error_description() == "Unknown error"
+        # A 4xx is not retryable, so only one request should have been made.
+        assert mock_client_instance.post.call_count == 1
 
     @patch("wristband.django_auth.client.httpx.Client")
     def test_malformed_token_response(self, mock_client_class):
@@ -1582,3 +1595,325 @@ class TestWristbandApiClientDocumentationExamples:
 
         # Verify the error matches the documentation
         assert exc_info.value.get_error_description() == "Authorization code has expired"
+
+
+########################################
+# RETRY BEHAVIOR TESTS
+########################################
+
+
+def _mock_response(status_code: int, json_data: dict = None) -> Mock:
+    """Build a mock httpx.Response whose raise_for_status() behaves like the real thing."""
+    mock_response = Mock()
+    mock_response.status_code = status_code
+    if json_data is not None:
+        mock_response.json.return_value = json_data
+    if status_code >= 400:
+        mock_response.raise_for_status.side_effect = httpx.HTTPStatusError(
+            f"{status_code} error", request=Mock(), response=mock_response
+        )
+    else:
+        mock_response.raise_for_status = Mock()
+    return mock_response
+
+
+class TestWristbandApiClientRetryBehavior:
+    """Test cases for automatic retry of transient failures."""
+
+    @patch("wristband.django_auth.client.httpx.Client")
+    def test_get_sdk_configuration_retries_on_5xx_and_eventually_succeeds(self, mock_client_class):
+        mock_200 = _mock_response(
+            200,
+            {
+                "loginUrl": "https://auth.example.com/login",
+                "redirectUri": "https://app.example.com/callback",
+                "isApplicationCustomDomainActive": False,
+            },
+        )
+
+        mock_client_instance = Mock()
+        mock_client_instance.get.side_effect = [_mock_response(500), _mock_response(500), mock_200]
+        mock_client_class.return_value = mock_client_instance
+
+        client = WristbandApiClient("auth.example.com", "client_id", "client_secret")
+        result = client.get_sdk_configuration()
+
+        assert isinstance(result, SdkConfiguration)
+        assert mock_client_instance.get.call_count == 3
+
+    @patch("wristband.django_auth.client.httpx.Client")
+    def test_get_sdk_configuration_does_not_retry_on_4xx(self, mock_client_class):
+        mock_client_instance = Mock()
+        mock_client_instance.get.return_value = _mock_response(404)
+        mock_client_class.return_value = mock_client_instance
+
+        client = WristbandApiClient("auth.example.com", "client_id", "client_secret")
+
+        with pytest.raises(WristbandError):
+            client.get_sdk_configuration()
+
+        assert mock_client_instance.get.call_count == 1
+
+    @patch("wristband.django_auth.client.httpx.Client")
+    def test_get_tokens_retries_on_5xx_and_eventually_succeeds(self, mock_client_class):
+        mock_200 = _mock_response(
+            200,
+            {
+                "access_token": "access123",
+                "token_type": "Bearer",
+                "expires_in": 3600,
+                "refresh_token": "refresh123",
+                "id_token": "id123",
+                "scope": "openid",
+            },
+        )
+
+        mock_client_instance = Mock()
+        mock_client_instance.post.side_effect = [_mock_response(500), _mock_response(500), mock_200]
+        mock_client_class.return_value = mock_client_instance
+
+        client = WristbandApiClient("auth.example.com", "client_id", "client_secret")
+        result = client.get_tokens("code", "https://app.example.com/callback", "verifier")
+
+        assert isinstance(result, WristbandTokenResponse)
+        assert mock_client_instance.post.call_count == 3
+
+    @patch("wristband.django_auth.client.httpx.Client")
+    def test_get_tokens_exhausts_retries_on_persistent_5xx(self, mock_client_class):
+        mock_client_instance = Mock()
+        mock_client_instance.post.return_value = _mock_response(
+            500, {"error": "server_error", "error_description": "Down for maintenance"}
+        )
+        mock_client_class.return_value = mock_client_instance
+
+        client = WristbandApiClient("auth.example.com", "client_id", "client_secret")
+
+        with pytest.raises(WristbandError) as exc_info:
+            client.get_tokens("code", "https://app.example.com/callback", "verifier")
+
+        assert mock_client_instance.post.call_count == MAX_API_RETRY_ATTEMPTS
+        assert exc_info.value.get_error() == "server_error"
+        assert exc_info.value.get_error_description() == "Down for maintenance"
+
+    @patch("wristband.django_auth.client.httpx.Client")
+    def test_get_tokens_does_not_retry_on_4xx(self, mock_client_class):
+        mock_client_instance = Mock()
+        mock_client_instance.post.return_value = _mock_response(
+            400, {"error": "invalid_request", "error_description": "Missing parameter"}
+        )
+        mock_client_class.return_value = mock_client_instance
+
+        client = WristbandApiClient("auth.example.com", "client_id", "client_secret")
+
+        with pytest.raises(WristbandError):
+            client.get_tokens("code", "https://app.example.com/callback", "verifier")
+
+        assert mock_client_instance.post.call_count == 1
+
+    @patch("wristband.django_auth.client.httpx.Client")
+    def test_get_userinfo_retries_on_5xx_and_eventually_succeeds(self, mock_client_class):
+        mock_200 = _mock_response(
+            200,
+            {
+                "sub": "user123",
+                "tnt_id": "tenant123",
+                "app_id": "app123",
+                "idp_name": "Wristband",
+                "email": "user@example.com",
+            },
+        )
+
+        mock_client_instance = Mock()
+        mock_client_instance.get.side_effect = [_mock_response(500), mock_200]
+        mock_client_class.return_value = mock_client_instance
+
+        client = WristbandApiClient("auth.example.com", "client_id", "client_secret")
+        result = client.get_userinfo("access_token")
+
+        assert isinstance(result, UserInfo)
+        assert mock_client_instance.get.call_count == 2
+
+    @patch("wristband.django_auth.client.httpx.Client")
+    def test_refresh_token_retries_on_5xx_and_eventually_succeeds(self, mock_client_class):
+        mock_200 = _mock_response(
+            200,
+            {
+                "access_token": "new_access123",
+                "token_type": "Bearer",
+                "expires_in": 3600,
+                "refresh_token": "new_refresh123",
+                "id_token": "new_id123",
+                "scope": "openid",
+            },
+        )
+
+        mock_client_instance = Mock()
+        mock_client_instance.post.side_effect = [_mock_response(500), _mock_response(500), mock_200]
+        mock_client_class.return_value = mock_client_instance
+
+        client = WristbandApiClient("auth.example.com", "client_id", "client_secret")
+        result = client.refresh_token("refresh123")
+
+        assert isinstance(result, WristbandTokenResponse)
+        assert mock_client_instance.post.call_count == 3
+
+    @patch("wristband.django_auth.client.httpx.Client")
+    def test_revoke_refresh_token_retries_on_5xx_and_eventually_succeeds(self, mock_client_class):
+        mock_client_instance = Mock()
+        mock_client_instance.post.side_effect = [_mock_response(500), _mock_response(200)]
+        mock_client_class.return_value = mock_client_instance
+
+        client = WristbandApiClient("auth.example.com", "client_id", "client_secret")
+        client.revoke_refresh_token("refresh123")
+
+        assert mock_client_instance.post.call_count == 2
+
+
+########################################
+# NON-JSON ERROR BODY TESTS
+########################################
+#
+# Regression: an error response whose body isn't JSON (e.g. a plain-text or HTML error
+# page from a proxy/CDN) must not crash with a JSON decoding error, and a 4xx with such
+# a body must still be treated as non-retryable.
+
+
+class TestWristbandApiClientNonJsonErrorBodies:
+    """Test cases for error responses that don't carry a JSON body."""
+
+    @patch("wristband.django_auth.client.httpx.Client")
+    def test_get_tokens_non_json_4xx_body_does_not_crash_and_is_not_retried(self, mock_client_class):
+        mock_response = _mock_response(401)
+        mock_response.json.side_effect = ValueError("not valid json")
+
+        mock_client_instance = Mock()
+        mock_client_instance.post.return_value = mock_response
+        mock_client_class.return_value = mock_client_instance
+
+        client = WristbandApiClient("auth.example.com", "client_id", "client_secret")
+
+        with pytest.raises(WristbandError) as exc_info:
+            client.get_tokens("code", "https://app.example.com/callback", "verifier")
+
+        assert mock_client_instance.post.call_count == 1
+        assert exc_info.value.get_error() == "unknown_error"
+        assert exc_info.value.get_error_description() == "Unknown error"
+
+    @patch("wristband.django_auth.client.httpx.Client")
+    def test_refresh_token_non_json_4xx_body_does_not_crash_and_is_not_retried(self, mock_client_class):
+        mock_response = _mock_response(400)
+        mock_response.json.side_effect = ValueError("not valid json")
+
+        mock_client_instance = Mock()
+        mock_client_instance.post.return_value = mock_response
+        mock_client_class.return_value = mock_client_instance
+
+        client = WristbandApiClient("auth.example.com", "client_id", "client_secret")
+
+        # refresh_token surfaces non-invalid_grant errors via raise_for_status()
+        with pytest.raises(httpx.HTTPStatusError):
+            client.refresh_token("refresh123")
+
+        assert mock_client_instance.post.call_count == 1
+
+    @patch("wristband.django_auth.client.httpx.Client")
+    def test_get_tokens_non_json_5xx_body_is_still_retried(self, mock_client_class):
+        mock_response = _mock_response(500)
+        mock_response.json.side_effect = ValueError("not valid json")
+
+        mock_client_instance = Mock()
+        mock_client_instance.post.return_value = mock_response
+        mock_client_class.return_value = mock_client_instance
+
+        client = WristbandApiClient("auth.example.com", "client_id", "client_secret")
+
+        with pytest.raises(WristbandError) as exc_info:
+            client.get_tokens("code", "https://app.example.com/callback", "verifier")
+
+        assert mock_client_instance.post.call_count == MAX_API_RETRY_ATTEMPTS
+        assert exc_info.value.get_error() == "unknown_error"
+
+
+########################################
+# VALIDATE_TENANT_CUSTOM_DOMAIN TESTS
+########################################
+
+
+class TestWristbandApiClientValidateTenantCustomDomain:
+    """Test cases for the validate_tenant_custom_domain method."""
+
+    @patch("wristband.django_auth.client.httpx.Client")
+    def test_validate_tenant_custom_domain_valid(self, mock_client_class):
+        mock_client_instance = Mock()
+        mock_client_instance.post.return_value = _mock_response(200, {"valid": True})
+        mock_client_class.return_value = mock_client_instance
+
+        client = WristbandApiClient("auth.example.com", "client_id", "client_secret")
+        result = client.validate_tenant_custom_domain("tenant.custom.com")
+
+        assert result is True
+        mock_client_instance.post.assert_called_once_with(
+            "https://auth.example.com/api/v1/custom-domains/validate",
+            headers={"Content-Type": "application/json", "Accept": "application/json"},
+            json={"tenantCustomDomain": "tenant.custom.com"},
+        )
+
+    @patch("wristband.django_auth.client.httpx.Client")
+    def test_validate_tenant_custom_domain_invalid(self, mock_client_class):
+        mock_client_instance = Mock()
+        mock_client_instance.post.return_value = _mock_response(200, {"valid": False})
+        mock_client_class.return_value = mock_client_instance
+
+        client = WristbandApiClient("auth.example.com", "client_id", "client_secret")
+
+        assert client.validate_tenant_custom_domain("unverified.custom.com") is False
+
+    @patch("wristband.django_auth.client.httpx.Client")
+    def test_validate_tenant_custom_domain_missing_valid_field_defaults_to_false(self, mock_client_class):
+        mock_client_instance = Mock()
+        mock_client_instance.post.return_value = _mock_response(200, {})
+        mock_client_class.return_value = mock_client_instance
+
+        client = WristbandApiClient("auth.example.com", "client_id", "client_secret")
+
+        assert client.validate_tenant_custom_domain("tenant.custom.com") is False
+
+    @patch("wristband.django_auth.client.httpx.Client")
+    def test_validate_tenant_custom_domain_empty_domain_raises_valueerror(self, mock_client_class):
+        mock_client_class.return_value = Mock()
+        client = WristbandApiClient("auth.example.com", "client_id", "client_secret")
+
+        with pytest.raises(ValueError, match="Tenant custom domain is required"):
+            client.validate_tenant_custom_domain("")
+
+    @patch("wristband.django_auth.client.httpx.Client")
+    def test_validate_tenant_custom_domain_whitespace_domain_raises_valueerror(self, mock_client_class):
+        mock_client_class.return_value = Mock()
+        client = WristbandApiClient("auth.example.com", "client_id", "client_secret")
+
+        with pytest.raises(ValueError, match="Tenant custom domain is required"):
+            client.validate_tenant_custom_domain("   ")
+
+    @patch("wristband.django_auth.client.httpx.Client")
+    def test_validate_tenant_custom_domain_retries_on_5xx_and_eventually_succeeds(self, mock_client_class):
+        mock_client_instance = Mock()
+        mock_client_instance.post.side_effect = [_mock_response(500), _mock_response(200, {"valid": True})]
+        mock_client_class.return_value = mock_client_instance
+
+        client = WristbandApiClient("auth.example.com", "client_id", "client_secret")
+
+        assert client.validate_tenant_custom_domain("tenant.custom.com") is True
+        assert mock_client_instance.post.call_count == 2
+
+    @patch("wristband.django_auth.client.httpx.Client")
+    def test_validate_tenant_custom_domain_does_not_retry_on_4xx(self, mock_client_class):
+        mock_client_instance = Mock()
+        mock_client_instance.post.return_value = _mock_response(400, {"message": "invalid_domain_name"})
+        mock_client_class.return_value = mock_client_instance
+
+        client = WristbandApiClient("auth.example.com", "client_id", "client_secret")
+
+        with pytest.raises(httpx.HTTPStatusError):
+            client.validate_tenant_custom_domain("not a real domain")
+
+        assert mock_client_instance.post.call_count == 1

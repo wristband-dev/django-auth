@@ -496,24 +496,23 @@ class TestConfigResolverSdkConfigFetching:
             # Should only have called the API once
             mock_client.get_sdk_configuration.assert_called_once()
 
-    def test_sdk_config_retry_logic(self):
-        """Test retry logic for SDK config fetching."""
+    def test_sdk_config_fetch_success_passthrough(self):
+        """Test that a successful fetch is returned as-is (no retry loop at this layer)."""
         with patch("wristband.django_auth.config_resolver.WristbandApiClient") as mock_client_class:
             mock_client = Mock()
-            # Fail twice, succeed on third attempt
-            mock_client.get_sdk_configuration = Mock(
-                side_effect=[Exception("Network error 1"), Exception("Network error 2"), self.valid_sdk_config]
-            )
+            mock_client.get_sdk_configuration = Mock(return_value=self.valid_sdk_config)
             mock_client_class.return_value = mock_client
 
             resolver = ConfigResolver(self.config)
 
             result = resolver.get_login_url()
             assert result == "https://sdk.example.com/login"
-            assert mock_client.get_sdk_configuration.call_count == 3
+            # Retrying on transient failures is handled one layer down by WristbandApiClient
+            # (see with_retry() in retry.py), so this layer only ever calls the API once.
+            assert mock_client.get_sdk_configuration.call_count == 1
 
-    def test_sdk_config_fetch_failure_after_max_retries(self):
-        """Test failure after maximum retry attempts."""
+    def test_sdk_config_fetch_failure_does_not_retry_at_this_layer(self):
+        """Test that a fetch failure surfaces immediately without retrying here."""
         with patch("wristband.django_auth.config_resolver.WristbandApiClient") as mock_client_class:
             mock_client = Mock()
             mock_client.get_sdk_configuration = Mock(side_effect=Exception("Persistent network error"))
@@ -525,8 +524,8 @@ class TestConfigResolverSdkConfigFetching:
                 resolver.get_login_url()
 
             assert exc_info.value.error == "sdk_config_fetch_failed"
-            assert "Failed to fetch SDK configuration after 3 attempts" in exc_info.value.error_description
-            assert mock_client.get_sdk_configuration.call_count == 3
+            assert "Failed to fetch SDK configuration: Persistent network error" == exc_info.value.error_description
+            assert mock_client.get_sdk_configuration.call_count == 1
 
     def test_preload_sdk_config(self):
         """Test preload_sdk_config method."""
@@ -593,8 +592,6 @@ class TestConfigResolverSdkConfigFetching:
             mock_client.get_sdk_configuration = Mock(
                 side_effect=[
                     Exception("First error"),
-                    Exception("Second error"),
-                    Exception("Third error"),
                     self.valid_sdk_config,  # Success on retry
                 ]
             )
@@ -602,33 +599,31 @@ class TestConfigResolverSdkConfigFetching:
 
             resolver = ConfigResolver(self.config)
 
-            # First attempt should fail after 3 retries
+            # First attempt should fail immediately (no retry loop at this layer)
             with pytest.raises(WristbandError):
                 resolver.get_login_url()
-            assert mock_client.get_sdk_configuration.call_count == 3
+            assert mock_client.get_sdk_configuration.call_count == 1
 
             # Second attempt should succeed
             result = resolver.get_redirect_uri()
             assert result == "https://sdk.example.com/callback"
-            assert mock_client.get_sdk_configuration.call_count == 4
+            assert mock_client.get_sdk_configuration.call_count == 2
 
-    def test_sdk_config_fetch_with_delay_and_retry(self):
-        """Test SDK config fetch with realistic network delays and retries."""
+    def test_sdk_config_fetch_with_network_delay(self):
+        """Test SDK config fetch with a realistic network delay."""
         with patch("wristband.django_auth.config_resolver.WristbandApiClient") as mock_client_class:
             mock_client = Mock()
 
-            # Simulate network timeouts then success
-            def delayed_error_then_success():
+            # Simulate a slow but successful network call
+            def delayed_success():
                 time.sleep(0.05)  # Small delay
-                if mock_client.get_sdk_configuration.call_count <= 2:
-                    raise Exception("Network timeout")
                 return SdkConfiguration(
                     login_url="https://sdk.example.com/login",
                     redirect_uri="https://sdk.example.com/callback",
                     is_application_custom_domain_active=False,
                 )
 
-            mock_client.get_sdk_configuration = Mock(side_effect=delayed_error_then_success)
+            mock_client.get_sdk_configuration = Mock(side_effect=delayed_success)
             mock_client_class.return_value = mock_client
 
             config = AuthConfig(
@@ -642,11 +637,11 @@ class TestConfigResolverSdkConfigFetching:
             result = resolver.get_login_url()
             end_time = time.time()
 
-            # Should succeed on third attempt
             assert result == "https://sdk.example.com/login"
-            assert mock_client.get_sdk_configuration.call_count == 3
-            # Should have taken some time due to retries and delays
-            assert end_time - start_time >= 0.15  # 3 calls * 0.05s delay + retry delays
+            # Retrying transient failures is handled one layer down by WristbandApiClient
+            # (see with_retry() in retry.py), so this layer only calls the API once.
+            assert mock_client.get_sdk_configuration.call_count == 1
+            assert end_time - start_time >= 0.05
 
 
 class TestConfigResolverDynamicValidation:
@@ -1136,7 +1131,7 @@ class TestConfigResolverEdgeCases:
             def error_then_success():
                 nonlocal total_call_count
                 total_call_count += 1
-                if total_call_count <= 3:  # First 3 calls fail
+                if total_call_count <= 1:  # First call fails
                     raise Exception(f"Error {total_call_count}")
                 return SdkConfiguration(
                     login_url="https://sdk.example.com/login",
@@ -1154,17 +1149,17 @@ class TestConfigResolverEdgeCases:
             )
             resolver = ConfigResolver(config)
 
-            # First call should fail after retries
+            # First call should fail immediately (retries live one layer down in the client)
             with pytest.raises(WristbandError):
                 resolver.get_login_url()
 
-            # Verify we made 3 attempts
-            assert total_call_count == 3
+            # Verify we made a single attempt at this layer
+            assert total_call_count == 1
 
-            # Second call should succeed (this will be the 4th total call)
+            # Second call should succeed (this will be the 2nd total call)
             result = resolver.get_redirect_uri()
             assert result == "https://sdk.example.com/callback"
-            assert total_call_count == 4  # One more call that succeeded
+            assert total_call_count == 2  # One more call that succeeded
 
     def test_config_validation_with_whitespace_values(self):
         """Test config validation handles whitespace-only values correctly."""
@@ -1180,23 +1175,21 @@ class TestConfigResolverEdgeCases:
         resolver = ConfigResolver(config)  # Should not raise
         assert resolver.get_parse_tenant_from_root_domain() == "   "
 
-    def test_sdk_config_fetch_with_delay_and_retry(self):
-        """Test SDK config fetch with realistic network delays and retries."""
+    def test_sdk_config_fetch_with_network_delay(self):
+        """Test SDK config fetch with a realistic network delay."""
         with patch("wristband.django_auth.config_resolver.WristbandApiClient") as mock_client_class:
             mock_client = Mock()
 
-            # Simulate network timeouts then success
-            def delayed_error_then_success():
+            # Simulate a slow but successful network call
+            def delayed_success():
                 time.sleep(0.05)  # Small delay
-                if mock_client.get_sdk_configuration.call_count <= 2:
-                    raise Exception("Network timeout")
                 return SdkConfiguration(
                     login_url="https://sdk.example.com/login",
                     redirect_uri="https://sdk.example.com/callback",
                     is_application_custom_domain_active=False,
                 )
 
-            mock_client.get_sdk_configuration = Mock(side_effect=delayed_error_then_success)
+            mock_client.get_sdk_configuration = Mock(side_effect=delayed_success)
             mock_client_class.return_value = mock_client
 
             config = AuthConfig(
@@ -1210,11 +1203,11 @@ class TestConfigResolverEdgeCases:
             result = resolver.get_login_url()
             end_time = time.time()
 
-            # Should succeed on third attempt
             assert result == "https://sdk.example.com/login"
-            assert mock_client.get_sdk_configuration.call_count == 3
-            # Should have taken some time due to retries and delays
-            assert end_time - start_time >= 0.15  # 3 calls * 0.05s delay + retry delays
+            # Retrying transient failures is handled one layer down by WristbandApiClient
+            # (see with_retry() in retry.py), so this layer only calls the API once.
+            assert mock_client.get_sdk_configuration.call_count == 1
+            assert end_time - start_time >= 0.05
 
     def test_concurrent_preload_and_get_requests(self):
         """Test concurrent preload and getter requests with threading."""

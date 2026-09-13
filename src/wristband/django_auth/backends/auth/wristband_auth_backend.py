@@ -1,4 +1,4 @@
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any, Optional, cast
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
@@ -10,6 +10,11 @@ from django.utils.module_loading import import_string
 from wristband.django_auth.models import CallbackData
 
 from .default_wristband_auth_backend_adapter import DefaultWristbandAuthBackendAdapter
+
+if TYPE_CHECKING:
+    # Mirrors the adapter's UserType alias: populate_user() is typed against the concrete
+    # User model, while get_user_model() is only typed as AbstractBaseUser.
+    from django.contrib.auth.models import User as UserType
 
 User = get_user_model()
 
@@ -240,7 +245,7 @@ class WristbandAuthBackend(ModelBackend):
 
         # Populate user fields via adapter
         adapter = self.get_adapter()
-        user = adapter.populate_user(django_user, callback_data, **kwargs)  # type: ignore[arg-type]
+        user = adapter.populate_user(cast("UserType", django_user), callback_data, **kwargs)
         user.save()
 
         return user
@@ -283,6 +288,6 @@ class WristbandAuthBackend(ModelBackend):
             - The method is defined in ModelBackend but documented here for clarity
         """
         try:
-            return User.objects.get(pk=user_id)
+            return cast(Optional[AbstractBaseUser], User.objects.get(pk=user_id))
         except User.DoesNotExist:
             return None

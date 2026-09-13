@@ -278,8 +278,12 @@ class TestWristbandAuthCallback:
 
         with patch.object(self.wristband_auth._wristband_api, "get_tokens", return_value=mock_token_response):
             with patch.object(self.wristband_auth._wristband_api, "get_userinfo", return_value=mock_user_info):
-                result = self.wristband_auth.callback(request)
+                with patch.object(
+                    self.wristband_auth._wristband_api, "validate_tenant_custom_domain", return_value=True
+                ) as mock_validate:
+                    result = self.wristband_auth.callback(request)
 
+        mock_validate.assert_called_once_with("custom.tenant.com")
         assert isinstance(result, CompletedCallbackResult)
         assert result.callback_data.tenant_custom_domain == "custom.tenant.com"
 
@@ -449,7 +453,8 @@ class TestWristbandAuthCallback:
         )
         request = self.factory.get(expected_url)
 
-        result = self.wristband_auth.callback(request)
+        with patch.object(self.wristband_auth._wristband_api, "validate_tenant_custom_domain", return_value=True):
+            result = self.wristband_auth.callback(request)
 
         assert isinstance(result, RedirectRequiredCallbackResult)
         assert (
@@ -838,7 +843,8 @@ class TestWristbandAuthCallbackBackwardCompatibility:
             HTTP_HOST="tenant1.auth.example.com",
         )
 
-        result = wristband_auth.callback(request)
+        with patch.object(wristband_auth._wristband_api, "validate_tenant_custom_domain", return_value=True):
+            result = wristband_auth.callback(request)
 
         assert isinstance(result, RedirectRequiredCallbackResult)
         # Should substitute tenant_domain with tenant1 and include custom domain param

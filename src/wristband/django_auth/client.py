@@ -7,12 +7,40 @@ It handles authentication and error processing.
 """
 
 import base64
+from typing import Optional, Tuple
 
 import httpx
 
 from .exceptions import InvalidGrantError, WristbandError
-from .models import RawUserInfo, SdkConfiguration, UserInfo, WristbandTokenResponse
+from .models import (
+    RawUserInfo,
+    SdkConfiguration,
+    UserInfo,
+    ValidateTenantCustomDomainResponse,
+    WristbandTokenResponse,
+)
+from .retry import with_retry
 from .utils import map_userinfo_claims
+
+
+def _parse_error_body(response: httpx.Response) -> Tuple[Optional[str], Optional[str]]:
+    """
+    Safely extracts an OAuth-style error code and description from an error response body.
+
+    Returns (None, None) if the body isn't valid JSON (e.g. a plain-text or HTML error
+    page from a proxy/CDN) so that error handling never raises a JSON decoding error of
+    its own -- otherwise a 4xx with a non-JSON body would surface as an unrelated
+    exception instead of a WristbandError/InvalidGrantError, and the retry logic in
+    retry.py would misread it as a transient failure and retry it.
+
+    Callers are responsible for applying a context-appropriate default when a value
+    comes back missing.
+    """
+    try:
+        data = response.json()
+        return data.get("error"), data.get("error_description")
+    except Exception:
+        return None, None
 
 
 class WristbandApiClient:
@@ -77,6 +105,8 @@ class WristbandApiClient:
         """
         Retrieves the SDK configuration from Wristband's SDK Auto-Configuration Endpoint.
 
+        Automatically retries on transient failures (5xx responses, network errors).
+
         Returns:
             SdkConfiguration: The SDK configuration containing auto-configurable values.
 
@@ -84,7 +114,8 @@ class WristbandApiClient:
             WristbandError: If the request fails or returns an error response.
             httpx.HTTPStatusError: For HTTP errors during the request.
         """
-        try:
+
+        def _do_request() -> httpx.Response:
             response = self.client.get(
                 f"{self.base_url}/clients/{self.client_id}/sdk-configuration",
                 headers={
@@ -92,8 +123,11 @@ class WristbandApiClient:
                     "Accept": "application/json",
                 },
             )
-
             response.raise_for_status()
+            return response
+
+        try:
+            response = with_retry(_do_request)
             return SdkConfiguration.from_api_response(response.json())
 
         except Exception as e:
@@ -147,24 +181,39 @@ class WristbandApiClient:
         if not code_verifier or not code_verifier.strip():
             raise ValueError("Code verifier is required")
 
-        response = self.client.post(
-            self.base_url + "/oauth2/token",
-            data={
-                "grant_type": "authorization_code",
-                "code": code,
-                "redirect_uri": redirect_uri,
-                "code_verifier": code_verifier,
-            },
-        )
+        def _do_request() -> httpx.Response:
+            response = self.client.post(
+                self.base_url + "/oauth2/token",
+                data={
+                    "grant_type": "authorization_code",
+                    "code": code,
+                    "redirect_uri": redirect_uri,
+                    "code_verifier": code_verifier,
+                },
+            )
+            # Raise on 5xx only, so with_retry can see (and retry) transient failures.
+            # 4xx responses are returned as-is and handled below without retrying.
+            if response.status_code >= 500:
+                response.raise_for_status()
+            return response
+
+        try:
+            response = with_retry(_do_request)
+        except httpx.HTTPStatusError as e:
+            # Retries were exhausted on a persistent 5xx -- fall through to the same
+            # error-body handling used for any other non-200 response.
+            response = e.response
 
         if response.status_code != 200:
-            data = response.json()
-            if data.get("error") == "invalid_grant":
-                raise InvalidGrantError(data.get("error_description", "Invalid grant"))
+            error, error_description = _parse_error_body(response)
+            if error == "invalid_grant":
+                raise InvalidGrantError(error_description if error_description is not None else "Invalid grant")
 
-            error = data.get("error") or "unknown_error"
-            error_description = data.get("error_description") or "Unknown error"
-            raise WristbandError(error, error_description)
+            raise WristbandError(
+                error or "unknown_error",
+                error_description or "Unknown error",
+                status_code=response.status_code,
+            )
 
         return WristbandTokenResponse.from_api_response(response.json())
 
@@ -202,12 +251,17 @@ class WristbandApiClient:
             RFC 6749 Section 7: https://tools.ietf.org/html/rfc6749#section-7
             OpenID Connect UserInfo: https://openid.net/specs/openid-connect-core-1_0.html#UserInfo
         """
-        try:
+
+        def _do_request() -> httpx.Response:
             response = self.client.get(
                 self.base_url + "/oauth2/userinfo",
                 headers={"Authorization": f"Bearer {access_token}"},
             )
             response.raise_for_status()
+            return response
+
+        try:
+            response = with_retry(_do_request)
             raw_userinfo = RawUserInfo.from_api_response(response.json())
             userinfo = map_userinfo_claims(raw_userinfo)
             return userinfo
@@ -250,15 +304,29 @@ class WristbandApiClient:
         See Also:
             RFC 6749 Section 6: https://tools.ietf.org/html/rfc6749#section-6
         """
-        response = self.client.post(
-            self.base_url + "/oauth2/token",
-            data={"grant_type": "refresh_token", "refresh_token": refresh_token},
-        )
+
+        def _do_request() -> httpx.Response:
+            response = self.client.post(
+                self.base_url + "/oauth2/token",
+                data={"grant_type": "refresh_token", "refresh_token": refresh_token},
+            )
+            # Raise on 5xx only, so with_retry can see (and retry) transient failures.
+            # 4xx responses are returned as-is and handled below without retrying.
+            if response.status_code >= 500:
+                response.raise_for_status()
+            return response
+
+        try:
+            response = with_retry(_do_request)
+        except httpx.HTTPStatusError as e:
+            # Retries were exhausted on a persistent 5xx -- fall through to the same
+            # error-body handling used for any other non-200 response.
+            response = e.response
 
         if response.status_code != 200:
-            data = response.json()
-            if data.get("error") == "invalid_grant":
-                raise InvalidGrantError(data.get("error_description", "Invalid grant"))
+            error, error_description = _parse_error_body(response)
+            if error == "invalid_grant":
+                raise InvalidGrantError(error_description if error_description is not None else "Invalid grant")
 
             # Raises for 4xx or 5xx
             response.raise_for_status()
@@ -292,8 +360,50 @@ class WristbandApiClient:
         See Also:
             RFC 7009: https://tools.ietf.org/html/rfc7009
         """
-        response = self.client.post(
-            self.base_url + "/oauth2/revoke",
-            data={"token": refresh_token},
-        )
-        response.raise_for_status()
+
+        def _do_request() -> httpx.Response:
+            response = self.client.post(
+                self.base_url + "/oauth2/revoke",
+                data={"token": refresh_token},
+            )
+            response.raise_for_status()
+            return response
+
+        with_retry(_do_request)
+
+    def validate_tenant_custom_domain(self, tenant_custom_domain: str) -> bool:
+        """
+        Validates that a tenant custom domain is verified and belongs to your Wristband application.
+
+        This is used to confirm that a tenant custom domain supplied via query parameter is
+        legitimate before the SDK redirects to it, preventing external users from manipulating
+        where the SDK sends them. Automatically retries on transient failures (5xx responses,
+        network errors).
+
+        Args:
+            tenant_custom_domain (str): The tenant custom domain to validate.
+
+        Returns:
+            bool: True if the tenant custom domain is verified and belongs to your application.
+
+        Raises:
+            ValueError: If tenant_custom_domain is None, empty, or whitespace-only.
+            httpx.HTTPStatusError: For any errors encountered during the request.
+        """
+        if not tenant_custom_domain or not tenant_custom_domain.strip():
+            raise ValueError("Tenant custom domain is required")
+
+        def _do_request() -> httpx.Response:
+            response = self.client.post(
+                self.base_url + "/custom-domains/validate",
+                headers={
+                    "Content-Type": "application/json",
+                    "Accept": "application/json",
+                },
+                json={"tenantCustomDomain": tenant_custom_domain},
+            )
+            response.raise_for_status()
+            return response
+
+        response = with_retry(_do_request)
+        return ValidateTenantCustomDomainResponse.from_api_response(response.json()).valid

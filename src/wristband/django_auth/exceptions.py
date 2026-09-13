@@ -6,6 +6,8 @@ errors that may occur during OAuth flows, token operations, and other Wristband
 authentication processes.
 """
 
+from typing import Optional
+
 
 class WristbandError(Exception):
     """
@@ -19,9 +21,11 @@ class WristbandError(Exception):
         error (str): The error code identifying the type of error that occurred.
         error_description (str): A human-readable description providing additional
             details about the error.
+        status_code (Optional[int]): The HTTP status code that caused this error, if known.
+            Used internally to classify whether a failed request is retryable.
     """
 
-    def __init__(self, error: str, error_description: str = "") -> None:
+    def __init__(self, error: str, error_description: str = "", status_code: Optional[int] = None) -> None:
         """
         Initialize a WristbandError with an error code and optional description.
 
@@ -29,6 +33,8 @@ class WristbandError(Exception):
             error (str): The error code identifying the type of error.
             error_description (str, optional): A human-readable description
                 providing additional details about the error. Defaults to empty string.
+            status_code (Optional[int], optional): The HTTP status code associated with
+                this error, when it originated from an API response. Defaults to None.
 
         Note:
             The exception message will be formatted as "{error}: {error_description}".
@@ -36,6 +42,7 @@ class WristbandError(Exception):
         super().__init__(f"{error}: {error_description}")
         self.error = error
         self.error_description = error_description
+        self.status_code = status_code
 
     def get_error(self) -> str:
         """

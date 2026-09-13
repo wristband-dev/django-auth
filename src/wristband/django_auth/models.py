@@ -761,6 +761,25 @@ class WristbandTokenResponse:
         )
 
 
+@dataclass
+class ValidateTenantCustomDomainResponse:
+    """
+    Represents the response from Wristband's tenant custom domain validation endpoint.
+
+    Attributes:
+        valid: Whether the tenant custom domain is verified and belongs to your application.
+    """
+
+    valid: bool
+
+    @staticmethod
+    def from_api_response(response: dict[str, Any]) -> "ValidateTenantCustomDomainResponse":
+        """
+        Creates a ValidateTenantCustomDomainResponse instance from an API response dictionary.
+        """
+        return ValidateTenantCustomDomainResponse(valid=bool(response.get("valid", False)))
+
+
 ########################################
 # LOGOUT MODELS
 ########################################
@@ -960,11 +979,13 @@ if TYPE_CHECKING:
         Use this for type hints when storing mixin classes created by the factory method.
         The mixin intercepts dispatch() to enforce authentication before processing requests.
         """
+
         def dispatch(self, request: HttpRequest, *args: Any, **kwargs: Any) -> HttpResponse:
             """
             Intercept view dispatch to check authentication before processing request.
             """
             return super().dispatch(request, *args, **kwargs)  # type: ignore[misc,no-any-return]
+
 else:
     # At runtime: just a marker for isinstance checks (optional)
     WristbandAuthMixin = object
