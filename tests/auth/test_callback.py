@@ -45,6 +45,7 @@ class TestWristbandAuthCallback:
             login_url="https://auth.example.com/login",
             redirect_uri="https://app.example.com/callback",
             wristband_application_vanity_domain="auth.example.com",
+            application_authorization_requests_enabled=False,
             token_expiration_buffer=60,
             auto_configure_enabled=False,
         )
@@ -78,7 +79,7 @@ class TestWristbandAuthCallback:
             login_url="https://{tenant_name}.auth.example.com/login",
             redirect_uri="https://{tenant_name}.app.example.com/callback",
             wristband_application_vanity_domain="auth.example.com",
-            parse_tenant_from_root_domain="auth.example.com",
+            application_authorization_requests_enabled=False,
             auto_configure_enabled=False,
         )
         wristband_auth = WristbandAuth(config_with_subdomain)
@@ -236,7 +237,8 @@ class TestWristbandAuthCallback:
         assert callback_data.user_info == mock_user_info
         assert callback_data.custom_state == {"user": "123"}
         assert callback_data.refresh_token == "refresh_token_123"
-        assert callback_data.return_url == "https://app.example.com/dashboard"
+        # Off-site return URL is rejected by open redirect validation.
+        assert callback_data.return_url is None
         assert callback_data.tenant_custom_domain is None
 
     @patch("wristband.django_auth.auth.time.time")
@@ -299,6 +301,7 @@ class TestWristbandAuthCallback:
             login_url="https://auth.example.com/login",
             redirect_uri="https://app.example.com/callback",
             wristband_application_vanity_domain="auth.example.com",
+            application_authorization_requests_enabled=False,
             auto_configure_enabled=False,
         )
         wristband_auth = WristbandAuth(config_no_buffer)
@@ -401,7 +404,7 @@ class TestWristbandAuthCallback:
             login_url="https://{tenant_name}.auth.example.com/login",
             redirect_uri="https://{tenant_name}.app.example.com/callback",
             wristband_application_vanity_domain="auth.example.com",
-            parse_tenant_from_root_domain="auth.example.com",
+            application_authorization_requests_enabled=False,
             token_expiration_buffer=60,
             auto_configure_enabled=False,
         )
@@ -439,7 +442,7 @@ class TestWristbandAuthCallback:
 
         with patch.object(wristband_auth._wristband_api, "get_tokens", return_value=mock_token_response):
             with patch.object(wristband_auth._wristband_api, "get_userinfo", return_value=mock_user_info):
-                with patch("wristband.django_auth.auth.time.time", return_value=1640995200.0):
+                with patch("wristband.django_auth.auth.time", **{"time.return_value": 1640995200.0}):
                     result = wristband_auth.callback(request)
 
         assert isinstance(result, CompletedCallbackResult)
@@ -471,7 +474,7 @@ class TestWristbandAuthCallback:
             login_url="https://{tenant_name}.auth.example.com/login",
             redirect_uri="https://{tenant_name}.app.example.com/callback",
             wristband_application_vanity_domain="auth.example.com",
-            parse_tenant_from_root_domain="auth.example.com",
+            application_authorization_requests_enabled=False,
             auto_configure_enabled=False,
         )
         wristband_auth = WristbandAuth(config_with_subdomain)
@@ -497,6 +500,7 @@ class TestWristbandAuthCallback:
             login_url="https://auth.example.com/login",
             redirect_uri="https://app.example.com/callback",
             wristband_application_vanity_domain="auth.example.com",
+            application_authorization_requests_enabled=False,
             token_expiration_buffer=0,  # Zero buffer
             auto_configure_enabled=False,
         )
@@ -631,7 +635,7 @@ class TestWristbandAuthCallback:
             login_url="https://{tenant_name}.auth.example.com/login",
             redirect_uri="https://{tenant_name}.app.example.com/callback",
             wristband_application_vanity_domain="auth.example.com",
-            parse_tenant_from_root_domain="auth.example.com",
+            application_authorization_requests_enabled=False,
             auto_configure_enabled=False,
         )
         wristband_auth = WristbandAuth(config_with_subdomain)
@@ -671,7 +675,7 @@ class TestWristbandAuthCallback:
 
         with patch.object(wristband_auth._wristband_api, "get_tokens", return_value=mock_token_response):
             with patch.object(wristband_auth._wristband_api, "get_userinfo", return_value=mock_user_info):
-                with patch("wristband.django_auth.auth.time.time", return_value=1640995200.0):
+                with patch("wristband.django_auth.auth.time", **{"time.return_value": 1640995200.0}):
                     result = wristband_auth.callback(request)
 
         assert isinstance(result, CompletedCallbackResult)
@@ -686,7 +690,7 @@ class TestWristbandAuthCallback:
             login_url="https://{tenant_name}.auth.example.com/login",
             redirect_uri="https://{tenant_name}.app.example.com/callback",
             wristband_application_vanity_domain="auth.example.com",
-            parse_tenant_from_root_domain="auth.example.com",
+            application_authorization_requests_enabled=False,
             auto_configure_enabled=False,
         )
         wristband_auth = WristbandAuth(config_with_subdomain)
@@ -707,7 +711,7 @@ class TestWristbandAuthCallback:
             login_url="https://{tenant_name}.auth.example.com/login",
             redirect_uri="https://{tenant_name}.app.example.com/callback",
             wristband_application_vanity_domain="auth.example.com",
-            parse_tenant_from_root_domain="auth.example.com",
+            application_authorization_requests_enabled=False,
             auto_configure_enabled=False,
         )
         wristband_auth = WristbandAuth(config_with_subdomain)
@@ -728,7 +732,7 @@ class TestWristbandAuthCallback:
             login_url="https://{tenant_name}.auth.example.com/login",
             redirect_uri="https://{tenant_name}.app.example.com/callback",
             wristband_application_vanity_domain="auth.example.com",
-            parse_tenant_from_root_domain="auth.example.com",
+            application_authorization_requests_enabled=False,
             auto_configure_enabled=False,
         )
         wristband_auth = WristbandAuth(config_with_subdomain)
@@ -743,22 +747,22 @@ class TestWristbandAuthCallback:
 
 
 class TestWristbandAuthCallbackBackwardCompatibility:
-    """Test cases for backward compatibility with {tenant_domain} placeholder in callback."""
+    """Test cases for backward compatibility with {tenant_name} placeholder in callback."""
 
     def setup_method(self) -> None:
         """Set up test fixtures."""
         self.factory = RequestFactory()
 
     def test_callback_with_tenant_domain_placeholder_in_login_url(self) -> None:
-        """Test callback works with {tenant_domain} placeholder in login_url."""
+        """Test callback works with {tenant_name} placeholder in login_url."""
         config = AuthConfig(
             client_id="test_client_id",
             client_secret="test_client_secret",
             login_state_secret=test_login_state_secret,
-            login_url="https://{tenant_domain}.auth.example.com/login",
-            redirect_uri="https://{tenant_domain}.app.example.com/callback",
+            login_url="https://{tenant_name}.auth.example.com/login",
+            redirect_uri="https://{tenant_name}.app.example.com/callback",
             wristband_application_vanity_domain="auth.example.com",
-            parse_tenant_from_root_domain="auth.example.com",
+            application_authorization_requests_enabled=False,
             auto_configure_enabled=False,
         )
         wristband_auth = WristbandAuth(config)
@@ -773,15 +777,15 @@ class TestWristbandAuthCallbackBackwardCompatibility:
         assert result.redirect_url == "https://tenant1.auth.example.com/login"
 
     def test_callback_with_tenant_domain_placeholder_in_redirect_uri(self) -> None:
-        """Test callback works with {tenant_domain} placeholder in redirect_uri."""
+        """Test callback works with {tenant_name} placeholder in redirect_uri."""
         config = AuthConfig(
             client_id="test_client_id",
             client_secret="test_client_secret",
             login_state_secret=test_login_state_secret,
-            login_url="https://{tenant_domain}.auth.example.com/login",
-            redirect_uri="https://{tenant_domain}.app.example.com/callback",
+            login_url="https://{tenant_name}.app.example.com/login",
+            redirect_uri="https://{tenant_name}.app.example.com/callback",
             wristband_application_vanity_domain="auth.example.com",
-            parse_tenant_from_root_domain="app.example.com",
+            application_authorization_requests_enabled=False,
             auto_configure_enabled=False,
         )
         wristband_auth = WristbandAuth(config)
@@ -818,22 +822,22 @@ class TestWristbandAuthCallbackBackwardCompatibility:
 
         with patch.object(wristband_auth._wristband_api, "get_tokens", return_value=mock_token_response):
             with patch.object(wristband_auth._wristband_api, "get_userinfo", return_value=mock_user_info):
-                with patch("wristband.django_auth.auth.time.time", return_value=1640995200.0):
+                with patch("wristband.django_auth.auth.time", **{"time.return_value": 1640995200.0}):
                     result = wristband_auth.callback(request)
 
         assert isinstance(result, CompletedCallbackResult)
         assert result.callback_data.tenant_name == "tenant1"
 
     def test_callback_builds_login_url_with_tenant_domain_and_custom_domain_param(self) -> None:
-        """Test callback builds correct login URL with {tenant_domain} placeholder and custom domain param."""
+        """Test callback builds correct login URL with {tenant_name} placeholder and custom domain param."""
         config = AuthConfig(
             client_id="test_client_id",
             client_secret="test_client_secret",
             login_state_secret=test_login_state_secret,
-            login_url="https://{tenant_domain}.auth.example.com/login",
-            redirect_uri="https://{tenant_domain}.app.example.com/callback",
+            login_url="https://{tenant_name}.auth.example.com/login",
+            redirect_uri="https://{tenant_name}.app.example.com/callback",
             wristband_application_vanity_domain="auth.example.com",
-            parse_tenant_from_root_domain="auth.example.com",
+            application_authorization_requests_enabled=False,
             auto_configure_enabled=False,
         )
         wristband_auth = WristbandAuth(config)
@@ -851,15 +855,15 @@ class TestWristbandAuthCallbackBackwardCompatibility:
         assert result.redirect_url == "https://tenant1.auth.example.com/login?tenant_custom_domain=custom.tenant.com"
 
     def test_callback_mixed_tenant_name_and_tenant_domain_placeholders(self) -> None:
-        """Test callback works when mixing {tenant_name} and {tenant_domain} placeholders."""
+        """Test callback works when mixing {tenant_name} and {tenant_name} placeholders."""
         config = AuthConfig(
             client_id="test_client_id",
             client_secret="test_client_secret",
             login_state_secret=test_login_state_secret,
-            login_url="https://{tenant_domain}.auth.example.com/login",
+            login_url="https://{tenant_name}.auth.example.com/login",
             redirect_uri="https://{tenant_name}.app.example.com/callback",
             wristband_application_vanity_domain="auth.example.com",
-            parse_tenant_from_root_domain="auth.example.com",
+            application_authorization_requests_enabled=False,
             auto_configure_enabled=False,
         )
         wristband_auth = WristbandAuth(config)

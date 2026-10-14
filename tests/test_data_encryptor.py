@@ -1,3 +1,6 @@
+import time
+from unittest.mock import patch
+
 import pytest
 from cryptography.fernet import InvalidToken
 
@@ -311,3 +314,17 @@ def test_encrypt_deeply_nested_data():
     assert decrypted == data
     assert decrypted["level1"]["level2"]["level3"]["level4"]["level5"]["deep_value"] == "found me!"
     assert decrypted["another_branch"]["nested"][1]["subitems"][0]["x"] == "y"
+
+
+def test_decrypt_with_ttl_accepts_recent_data():
+    encryptor = DataEncryptor(SECRET)
+    encrypted = encryptor.encrypt({"key": "value"})
+    assert encryptor.decrypt(encrypted, ttl=3600) == {"key": "value"}
+
+
+def test_decrypt_with_ttl_rejects_expired_data():
+    encryptor = DataEncryptor(SECRET)
+    encrypted = encryptor.encrypt({"key": "value"})
+    with patch("cryptography.fernet.time.time", return_value=time.time() + 3600 + 61):
+        with pytest.raises(InvalidToken):
+            encryptor.decrypt(encrypted, ttl=3600)

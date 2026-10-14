@@ -34,6 +34,7 @@ class TestWristbandAuthLogout:
             login_url="https://auth.example.com/login",
             redirect_uri="https://app.example.com/callback",
             wristband_application_vanity_domain="auth.example.com",
+            application_authorization_requests_enabled=False,
             auto_configure_enabled=False,
         )
         self.wristband_auth = WristbandAuth(self.auth_config)
@@ -115,7 +116,7 @@ class TestWristbandAuthLogout:
             login_url="https://{tenant_name}.auth.example.com/login",
             redirect_uri="https://{tenant_name}.app.example.com/callback",
             wristband_application_vanity_domain="auth.example.com",
-            parse_tenant_from_root_domain="auth.example.com",
+            application_authorization_requests_enabled=False,
             is_application_custom_domain_active=True,  # Uses "." separator
             auto_configure_enabled=False,
         )
@@ -157,6 +158,7 @@ class TestWristbandAuthLogout:
             login_url="https://auth.example.com/login",
             redirect_uri="https://app.example.com/callback",
             wristband_application_vanity_domain="auth.example.com",
+            application_authorization_requests_enabled=False,
             custom_application_login_page_url=custom_url,
             auto_configure_enabled=False,
         )
@@ -263,6 +265,7 @@ class TestWristbandAuthLogout:
             login_url="https://auth.example.com/login",
             redirect_uri="https://app.example.com/callback",
             wristband_application_vanity_domain="auth.example.com",
+            application_authorization_requests_enabled=False,
             is_application_custom_domain_active=True,
             auto_configure_enabled=False,
         )
@@ -434,22 +437,22 @@ class TestWristbandAuthLogout:
 
 
 class TestWristbandAuthLogoutBackwardCompatibility:
-    """Test cases for backward compatibility with {tenant_domain} placeholder in logout."""
+    """Test cases for backward compatibility with {tenant_name} placeholder in logout."""
 
     def setup_method(self) -> None:
         """Set up test fixtures."""
         self.factory = RequestFactory()
 
     def test_logout_with_tenant_domain_placeholder_in_login_url(self) -> None:
-        """Test logout works with {tenant_domain} placeholder in login_url."""
+        """Test logout works with {tenant_name} placeholder in login_url."""
         config = AuthConfig(
             client_id="test_client_id",
             client_secret="test_client_secret",
             login_state_secret=test_login_state_secret,
-            login_url="https://{tenant_domain}.auth.example.com/login",
-            redirect_uri="https://{tenant_domain}.app.example.com/callback",
+            login_url="https://{tenant_name}.auth.example.com/login",
+            redirect_uri="https://{tenant_name}.app.example.com/callback",
             wristband_application_vanity_domain="auth.example.com",
-            parse_tenant_from_root_domain="auth.example.com",
+            application_authorization_requests_enabled=False,
             auto_configure_enabled=False,
         )
         wristband_auth = WristbandAuth(config)
@@ -465,15 +468,15 @@ class TestWristbandAuthLogoutBackwardCompatibility:
         assert_redirect_no_cache(response, expected_url)
 
     def test_logout_with_tenant_domain_and_custom_domain_active(self) -> None:
-        """Test logout with {tenant_domain} placeholder and custom domain active (dot separator)."""
+        """Test logout with {tenant_name} placeholder and custom domain active (dot separator)."""
         config = AuthConfig(
             client_id="test_client_id",
             client_secret="test_client_secret",
             login_state_secret=test_login_state_secret,
-            login_url="https://{tenant_domain}.auth.example.com/login",
-            redirect_uri="https://{tenant_domain}.app.example.com/callback",
+            login_url="https://{tenant_name}.auth.example.com/login",
+            redirect_uri="https://{tenant_name}.app.example.com/callback",
             wristband_application_vanity_domain="auth.example.com",
-            parse_tenant_from_root_domain="auth.example.com",
+            application_authorization_requests_enabled=False,
             is_application_custom_domain_active=True,  # Use dot separator
             auto_configure_enabled=False,
         )
@@ -490,15 +493,15 @@ class TestWristbandAuthLogoutBackwardCompatibility:
         assert_redirect_no_cache(response, expected_url)
 
     def test_logout_with_tenant_domain_config_takes_precedence(self) -> None:
-        """Test logout with {tenant_domain} respects LogoutConfig tenant_name precedence."""
+        """Test logout with {tenant_name} respects LogoutConfig tenant_name precedence."""
         config = AuthConfig(
             client_id="test_client_id",
             client_secret="test_client_secret",
             login_state_secret=test_login_state_secret,
-            login_url="https://{tenant_domain}.auth.example.com/login",
-            redirect_uri="https://{tenant_domain}.app.example.com/callback",
+            login_url="https://{tenant_name}.auth.example.com/login",
+            redirect_uri="https://{tenant_name}.app.example.com/callback",
             wristband_application_vanity_domain="auth.example.com",
-            parse_tenant_from_root_domain="auth.example.com",
+            application_authorization_requests_enabled=False,
             auto_configure_enabled=False,
         )
         wristband_auth = WristbandAuth(config)

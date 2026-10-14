@@ -32,6 +32,7 @@ class TestWristbandAuthCreateCallbackResponse:
             login_url="https://auth.example.com/login",
             redirect_uri="https://app.example.com/callback",
             wristband_application_vanity_domain="auth.example.com",
+            application_authorization_requests_enabled=False,
             token_expiration_buffer=60,
         )
         self.wristband_auth = WristbandAuth(self.auth_config)
@@ -111,6 +112,7 @@ class TestWristbandAuthCreateCallbackResponse:
             login_url="https://auth.example.com/login",
             redirect_uri="https://app.example.com/callback",
             wristband_application_vanity_domain="auth.example.com",
+            application_authorization_requests_enabled=False,
             dangerously_disable_secure_cookies=True,
         )
         wristband_auth = WristbandAuth(config_insecure)

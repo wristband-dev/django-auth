@@ -21,6 +21,7 @@ class TestWristbandAuthRefreshTokenIfExpired:
             login_url="https://auth.example.com/login",
             redirect_uri="https://app.example.com/callback",
             wristband_application_vanity_domain="auth.example.com",
+            application_authorization_requests_enabled=False,
             token_expiration_buffer=60,  # 60 second buffer
         )
         self.wristband_auth = WristbandAuth(self.auth_config)
@@ -114,6 +115,7 @@ class TestWristbandAuthRefreshTokenIfExpired:
             login_url="https://auth.example.com/login",
             redirect_uri="https://app.example.com/callback",
             wristband_application_vanity_domain="auth.example.com",
+            application_authorization_requests_enabled=False,
         )
         wristband_auth = WristbandAuth(config_no_buffer)
 
@@ -267,6 +269,7 @@ class TestWristbandAuthRefreshTokenIfExpired:
             login_url="https://auth.example.com/login",
             redirect_uri="https://app.example.com/callback",
             wristband_application_vanity_domain="auth.example.com",
+            application_authorization_requests_enabled=False,
             token_expiration_buffer=120,  # 2 minute buffer
         )
         wristband_auth = WristbandAuth(config_custom_buffer)
@@ -327,6 +330,7 @@ class TestWristbandAuthRefreshTokenIfExpired:
             login_url="https://auth.example.com/login",
             redirect_uri="https://app.example.com/callback",
             wristband_application_vanity_domain="auth.example.com",
+            application_authorization_requests_enabled=False,
             token_expiration_buffer=0,  # Zero buffer
         )
         wristband_auth = WristbandAuth(config_zero_buffer)

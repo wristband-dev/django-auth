@@ -41,6 +41,7 @@ class TestWristbandAuthLogin:
             login_url="https://auth.example.com/login",
             redirect_uri="https://app.example.com/callback",
             wristband_application_vanity_domain="auth.example.com",
+            application_authorization_requests_enabled=False,
             scopes=["openid", "offline_access", "email"],
             auto_configure_enabled=False,
         )
@@ -71,6 +72,7 @@ class TestWristbandAuthLogin:
             login_url="https://auth.example.com/login",
             redirect_uri="https://app.example.com/callback",
             wristband_application_vanity_domain="auth.example.com",
+            application_authorization_requests_enabled=False,
             custom_application_login_page_url=custom_url,
             auto_configure_enabled=False,
         )
@@ -164,10 +166,10 @@ class TestWristbandAuthLogin:
             client_id="test_client_id",
             client_secret="test_client_secret",
             login_state_secret=test_login_state_secret,
-            login_url="https://{tenant_name}.auth.example.com/login",
-            redirect_uri="https://{tenant_name}.app.example.com/callback",
+            login_url="https://{tenant_name}.custom.com/login",
+            redirect_uri="https://{tenant_name}.custom.com/callback",
             wristband_application_vanity_domain="auth.example.com",
-            parse_tenant_from_root_domain="custom.com",
+            application_authorization_requests_enabled=False,
             scopes=["openid", "email"],
             auto_configure_enabled=False,
         )
@@ -187,7 +189,7 @@ class TestWristbandAuthLogin:
 
         # Validate query params
         assert_authorize_query_params(
-            query_params, "test_client_id", "https://{tenant_name}.app.example.com/callback", "openid email"
+            query_params, "test_client_id", "https://{tenant_name}.custom.com/callback", "openid email"
         )
 
         # Validate login state cookie is set
@@ -327,6 +329,7 @@ class TestWristbandAuthCreateLoginState:
             login_url="https://auth.example.com/login",
             redirect_uri="https://app.example.com/callback",
             wristband_application_vanity_domain="auth.example.com",
+            application_authorization_requests_enabled=False,
             auto_configure_enabled=False,
         )
         self.wristband_auth = WristbandAuth(self.auth_config)
@@ -388,6 +391,7 @@ class TestWristbandAuthGenerateRandomString:
             login_url="https://auth.example.com/login",
             redirect_uri="https://app.example.com/callback",
             wristband_application_vanity_domain="auth.example.com",
+            application_authorization_requests_enabled=False,
             auto_configure_enabled=False,
         )
         self.wristband_auth = WristbandAuth(self.auth_config)
@@ -426,6 +430,7 @@ class TestWristbandAuthEncryptDecryptLoginState:
             login_url="https://auth.example.com/login",
             redirect_uri="https://app.example.com/callback",
             wristband_application_vanity_domain="auth.example.com",
+            application_authorization_requests_enabled=False,
             auto_configure_enabled=False,
         )
         self.wristband_auth = WristbandAuth(self.auth_config)
@@ -478,6 +483,7 @@ class TestWristbandAuthGenerateCodeChallenge:
             login_url="https://auth.example.com/login",
             redirect_uri="https://app.example.com/callback",
             wristband_application_vanity_domain="auth.example.com",
+            application_authorization_requests_enabled=False,
             auto_configure_enabled=False,
         )
         self.wristband_auth = WristbandAuth(self.auth_config)
@@ -513,6 +519,7 @@ class TestWristbandAuthGetOAuthAuthorizeUrl:
             login_url="https://auth.example.com/login",
             redirect_uri="https://app.example.com/callback",
             wristband_application_vanity_domain="auth.example.com",
+            application_authorization_requests_enabled=False,
             scopes=["openid", "email", "profile"],
             auto_configure_enabled=False,
         )
@@ -666,6 +673,7 @@ class TestWristbandAuthCookieManagement:
             login_url="https://auth.example.com/login",
             redirect_uri="https://app.example.com/callback",
             wristband_application_vanity_domain="auth.example.com",
+            application_authorization_requests_enabled=False,
             auto_configure_enabled=False,
         )
         self.wristband_auth = WristbandAuth(self.auth_config)
@@ -721,6 +729,7 @@ class TestWristbandAuthBuildTenantLoginUrl:
             login_url="https://auth.example.com/login",
             redirect_uri="https://app.example.com/callback",
             wristband_application_vanity_domain="auth.example.com",
+            application_authorization_requests_enabled=False,
             auto_configure_enabled=False,
         )
         self.wristband_auth = WristbandAuth(self.auth_config)
@@ -734,7 +743,7 @@ class TestWristbandAuthBuildTenantLoginUrl:
             login_url="https://{tenant_name}.auth.example.com/login",
             redirect_uri="https://{tenant_name}.app.example.com/callback",
             wristband_application_vanity_domain="auth.example.com",
-            parse_tenant_from_root_domain="auth.example.com",
+            application_authorization_requests_enabled=False,
             auto_configure_enabled=False,
         )
         wristband_auth = WristbandAuth(config_with_subdomain)
@@ -784,6 +793,7 @@ class TestWristbandAuthResolveTenantMethods:
             login_url="https://auth.example.com/login",
             redirect_uri="https://app.example.com/callback",
             wristband_application_vanity_domain="auth.example.com",
+            application_authorization_requests_enabled=False,
             auto_configure_enabled=False,
         )
         self.wristband_auth = WristbandAuth(self.auth_config)
@@ -798,7 +808,7 @@ class TestWristbandAuthResolveTenantMethods:
             login_url="https://{tenant_name}.auth.example.com/login",
             redirect_uri="https://{tenant_name}.app.example.com/callback",
             wristband_application_vanity_domain="auth.example.com",
-            parse_tenant_from_root_domain="auth.example.com",
+            application_authorization_requests_enabled=False,
             auto_configure_enabled=False,
         )
         wristband_auth = WristbandAuth(config_with_subdomain)
@@ -842,7 +852,7 @@ class TestWristbandAuthResolveTenantMethods:
             login_url="https://{tenant_name}.auth.example.com/login",
             redirect_uri="https://{tenant_name}.app.example.com/callback",
             wristband_application_vanity_domain="auth.example.com",
-            parse_tenant_from_root_domain="auth.example.com",
+            application_authorization_requests_enabled=False,
             auto_configure_enabled=False,
         )
         wristband_auth = WristbandAuth(config_with_subdomain)
@@ -862,7 +872,7 @@ class TestWristbandAuthResolveTenantMethods:
             login_url="https://{tenant_name}.auth.example.com/login",
             redirect_uri="https://{tenant_name}.app.example.com/callback",
             wristband_application_vanity_domain="auth.example.com",
-            parse_tenant_from_root_domain="auth.example.com",
+            application_authorization_requests_enabled=False,
             auto_configure_enabled=False,
         )
         wristband_auth = WristbandAuth(config_with_subdomain)
@@ -882,7 +892,7 @@ class TestWristbandAuthResolveTenantMethods:
             login_url="https://{tenant_name}.auth.example.com/login",
             redirect_uri="https://{tenant_name}.app.example.com/callback",
             wristband_application_vanity_domain="auth.example.com",
-            parse_tenant_from_root_domain="auth.example.com",
+            application_authorization_requests_enabled=False,
             auto_configure_enabled=False,
         )
         wristband_auth = WristbandAuth(config_with_subdomain)
@@ -902,7 +912,7 @@ class TestWristbandAuthResolveTenantMethods:
             login_url="https://{tenant_name}.auth.example.com/login",
             redirect_uri="https://{tenant_name}.app.example.com/callback",
             wristband_application_vanity_domain="auth.example.com",
-            parse_tenant_from_root_domain="auth.example.com",
+            application_authorization_requests_enabled=False,
             auto_configure_enabled=False,
         )
         wristband_auth = WristbandAuth(config_with_subdomain)
@@ -922,7 +932,7 @@ class TestWristbandAuthResolveTenantMethods:
             login_url="https://{tenant_name}.auth.example.com/login",
             redirect_uri="https://{tenant_name}.app.example.com/callback",
             wristband_application_vanity_domain="auth.example.com",
-            parse_tenant_from_root_domain="auth.example.com",
+            application_authorization_requests_enabled=False,
             auto_configure_enabled=False,
         )
         wristband_auth = WristbandAuth(config_with_subdomain)
@@ -942,7 +952,7 @@ class TestWristbandAuthResolveTenantMethods:
             login_url="https://{tenant_name}.auth.example.com/login",
             redirect_uri="https://{tenant_name}.app.example.com/callback",
             wristband_application_vanity_domain="auth.example.com",
-            parse_tenant_from_root_domain="auth.example.com",
+            application_authorization_requests_enabled=False,
             auto_configure_enabled=False,
         )
         wristband_auth = WristbandAuth(config_with_subdomain)
@@ -966,6 +976,7 @@ class TestWristbandAuthAssertSingleParam:
             login_url="https://auth.example.com/login",
             redirect_uri="https://app.example.com/callback",
             wristband_application_vanity_domain="auth.example.com",
+            application_authorization_requests_enabled=False,
             auto_configure_enabled=False,
         )
         self.wristband_auth = WristbandAuth(self.auth_config)
@@ -1015,6 +1026,7 @@ class TestClearOldestLoginStateCooie:
             login_url="https://auth.example.com/login",
             redirect_uri="https://app.example.com/callback",
             wristband_application_vanity_domain="auth.example.com",
+            application_authorization_requests_enabled=False,
             auto_configure_enabled=False,
         )
         self.wristband_auth = WristbandAuth(self.auth_config)
@@ -1116,6 +1128,7 @@ class TestClearOldestLoginStateCooie:
             login_url="https://auth.example.com/login",
             redirect_uri="https://app.example.com/callback",
             wristband_application_vanity_domain="auth.example.com",
+            application_authorization_requests_enabled=False,
             dangerously_disable_secure_cookies=True,
             auto_configure_enabled=False,
         )
@@ -1165,22 +1178,22 @@ class TestClearOldestLoginStateCooie:
 
 
 class TestWristbandAuthLoginBackwardCompatibility:
-    """Test cases for backward compatibility with {tenant_domain} placeholder in login."""
+    """Test cases for backward compatibility with {tenant_name} placeholder in login."""
 
     def setup_method(self) -> None:
         """Set up test fixtures."""
         self.factory = RequestFactory()
 
     def test_login_with_tenant_domain_placeholder_in_login_url(self) -> None:
-        """Test login works with {tenant_domain} placeholder in login_url."""
+        """Test login works with {tenant_name} placeholder in login_url."""
         config = AuthConfig(
             client_id="test_client_id",
             client_secret="test_client_secret",
             login_state_secret=test_login_state_secret,
-            login_url="https://{tenant_domain}.auth.example.com/login",
-            redirect_uri="https://{tenant_domain}.app.example.com/callback",
+            login_url="https://{tenant_name}.auth.example.com/login",
+            redirect_uri="https://{tenant_name}.app.example.com/callback",
             wristband_application_vanity_domain="auth.example.com",
-            parse_tenant_from_root_domain="auth.example.com",
+            application_authorization_requests_enabled=False,
             scopes=["openid", "offline_access", "email"],
             auto_configure_enabled=False,
         )
@@ -1195,23 +1208,21 @@ class TestWristbandAuthLoginBackwardCompatibility:
         _, query_params = assert_redirect_no_cache(response, expected_url)
 
         # Validate query params
-        assert_authorize_query_params(
-            query_params, "test_client_id", "https://{tenant_domain}.app.example.com/callback"
-        )
+        assert_authorize_query_params(query_params, "test_client_id", "https://{tenant_name}.app.example.com/callback")
 
         # Validate login state cookie is set
         assert_single_login_cookie_valid(response)
 
     def test_login_with_tenant_domain_placeholder_and_subdomain_parsing(self) -> None:
-        """Test login with {tenant_domain} placeholder extracts tenant from subdomain."""
+        """Test login with {tenant_name} placeholder extracts tenant from subdomain."""
         config = AuthConfig(
             client_id="test_client_id",
             client_secret="test_client_secret",
             login_state_secret=test_login_state_secret,
-            login_url="https://{tenant_domain}.auth.example.com/login",
-            redirect_uri="https://{tenant_domain}.app.example.com/callback",
+            login_url="https://{tenant_name}.auth.example.com/login",
+            redirect_uri="https://{tenant_name}.app.example.com/callback",
             wristband_application_vanity_domain="auth.example.com",
-            parse_tenant_from_root_domain="auth.example.com",
+            application_authorization_requests_enabled=False,
             scopes=["openid", "offline_access", "email"],
             auto_configure_enabled=False,
         )
@@ -1220,28 +1231,26 @@ class TestWristbandAuthLoginBackwardCompatibility:
         request = self.factory.get("/login", HTTP_HOST="tenant1.auth.example.com")
         response = wristband_auth.login(request)
 
-        # Validate redirect response substitutes {tenant_domain} with tenant1
+        # Validate redirect response substitutes {tenant_name} with tenant1
         expected_url = "https://tenant1-auth.example.com/api/v1/oauth2/authorize"
         _, query_params = assert_redirect_no_cache(response, expected_url)
 
         # Validate query params
-        assert_authorize_query_params(
-            query_params, "test_client_id", "https://{tenant_domain}.app.example.com/callback"
-        )
+        assert_authorize_query_params(query_params, "test_client_id", "https://{tenant_name}.app.example.com/callback")
 
         # Validate login state cookie is set
         assert_single_login_cookie_valid(response)
 
     def test_login_mixed_tenant_name_and_tenant_domain_placeholders(self) -> None:
-        """Test login works when mixing {tenant_name} and {tenant_domain} placeholders."""
+        """Test login works when mixing {tenant_name} and {tenant_name} placeholders."""
         config = AuthConfig(
             client_id="test_client_id",
             client_secret="test_client_secret",
             login_state_secret=test_login_state_secret,
-            login_url="https://{tenant_domain}.auth.example.com/login",
+            login_url="https://{tenant_name}.auth.example.com/login",
             redirect_uri="https://{tenant_name}.app.example.com/callback",
             wristband_application_vanity_domain="auth.example.com",
-            parse_tenant_from_root_domain="auth.example.com",
+            application_authorization_requests_enabled=False,
             scopes=["openid", "offline_access", "email"],
             auto_configure_enabled=False,
         )
@@ -1262,15 +1271,15 @@ class TestWristbandAuthLoginBackwardCompatibility:
         assert_single_login_cookie_valid(response)
 
     def test_login_with_tenant_domain_and_custom_domain_param(self) -> None:
-        """Test login with {tenant_domain} placeholder and tenant_custom_domain param."""
+        """Test login with {tenant_name} placeholder and tenant_custom_domain param."""
         config = AuthConfig(
             client_id="test_client_id",
             client_secret="test_client_secret",
             login_state_secret=test_login_state_secret,
-            login_url="https://{tenant_domain}.auth.example.com/login",
-            redirect_uri="https://{tenant_domain}.app.example.com/callback",
+            login_url="https://{tenant_name}.auth.example.com/login",
+            redirect_uri="https://{tenant_name}.app.example.com/callback",
             wristband_application_vanity_domain="auth.example.com",
-            parse_tenant_from_root_domain="auth.example.com",
+            application_authorization_requests_enabled=False,
             scopes=["openid", "offline_access", "email"],
             auto_configure_enabled=False,
         )
@@ -1288,15 +1297,13 @@ class TestWristbandAuthLoginBackwardCompatibility:
         _, query_params = assert_redirect_no_cache(response, expected_url)
 
         # Validate query params
-        assert_authorize_query_params(
-            query_params, "test_client_id", "https://{tenant_domain}.app.example.com/callback"
-        )
+        assert_authorize_query_params(query_params, "test_client_id", "https://{tenant_name}.app.example.com/callback")
 
         # Validate login state cookie is set
         assert_single_login_cookie_valid(response)
 
     def test_login_with_tenant_domain_without_subdomain_parsing(self) -> None:
-        """Test login with {tenant_domain} placeholder using tenant_name query param (no subdomain parsing)."""
+        """Test login with {tenant_name} placeholder using tenant_name query param (no subdomain parsing)."""
         config = AuthConfig(
             client_id="test_client_id",
             client_secret="test_client_secret",
@@ -1304,6 +1311,7 @@ class TestWristbandAuthLoginBackwardCompatibility:
             login_url="https://auth.example.com/login",
             redirect_uri="https://app.example.com/callback",
             wristband_application_vanity_domain="auth.example.com",
+            application_authorization_requests_enabled=False,
             # No parse_tenant_from_root_domain - uses tenant_name param
             scopes=["openid", "offline_access", "email"],
             auto_configure_enabled=False,
@@ -1324,39 +1332,39 @@ class TestWristbandAuthLoginBackwardCompatibility:
         assert_single_login_cookie_valid(response)
 
     def test_build_tenant_login_url_with_tenant_domain_placeholder(self) -> None:
-        """Test _build_tenant_login_url works with {tenant_domain} placeholder."""
+        """Test _build_tenant_login_url works with {tenant_name} placeholder."""
         config = AuthConfig(
             client_id="test_client_id",
             client_secret="test_client_secret",
             login_state_secret=test_login_state_secret,
-            login_url="https://{tenant_domain}.auth.example.com/login",
-            redirect_uri="https://{tenant_domain}.app.example.com/callback",
+            login_url="https://{tenant_name}.auth.example.com/login",
+            redirect_uri="https://{tenant_name}.app.example.com/callback",
             wristband_application_vanity_domain="auth.example.com",
-            parse_tenant_from_root_domain="auth.example.com",
+            application_authorization_requests_enabled=False,
             auto_configure_enabled=False,
         )
         wristband_auth = WristbandAuth(config)
 
         result = wristband_auth._build_tenant_login_url(
-            login_url="https://{tenant_domain}.auth.example.com/login",
+            login_url="https://{tenant_name}.auth.example.com/login",
             tenant_name="tenant1",
             tenant_custom_domain=None,
             parse_tenant_from_root_domain="auth.example.com",
         )
 
-        # {tenant_domain} should be substituted with tenant1
+        # {tenant_name} should be substituted with tenant1
         assert result == "https://tenant1.auth.example.com/login"
 
     def test_oauth_authorize_url_with_tenant_domain_placeholder(self) -> None:
-        """Test _get_oauth_authorize_url works with {tenant_domain} placeholder."""
+        """Test _get_oauth_authorize_url works with {tenant_name} placeholder."""
         config = AuthConfig(
             client_id="test_client_id",
             client_secret="test_client_secret",
             login_state_secret=test_login_state_secret,
-            login_url="https://{tenant_domain}.auth.example.com/login",
-            redirect_uri="https://{tenant_domain}.app.example.com/callback",
+            login_url="https://{tenant_name}.auth.example.com/login",
+            redirect_uri="https://{tenant_name}.app.example.com/callback",
             wristband_application_vanity_domain="auth.example.com",
-            parse_tenant_from_root_domain="auth.example.com",
+            application_authorization_requests_enabled=False,
             scopes=["openid", "email", "profile"],
             auto_configure_enabled=False,
         )
@@ -1366,7 +1374,7 @@ class TestWristbandAuthLoginBackwardCompatibility:
 
         oauth_config = OAuthAuthorizeUrlConfig(
             client_id="test_client_id",
-            redirect_uri="https://{tenant_domain}.app.example.com/callback",
+            redirect_uri="https://{tenant_name}.app.example.com/callback",
             code_verifier="test_verifier",
             scopes=["openid", "email", "profile"],
             state="test_state",

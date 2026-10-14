@@ -18,6 +18,10 @@ class AuthConfig:
     Represents the configuration for Wristband authentication.
 
     Attributes:
+        application_authorization_requests_enabled: Flag indicating whether application-level authorization requests
+            are enabled. Defaults to True. If True, for login and logout scenarios where neither a tenant name nor a
+            tenant custom domain can be resolved, the user is redirected to the Wristband Authorize Endpoint using the
+            application vanity domain to initiate an app-level authorization request. This field is auto-configurable.
         auto_configure_enabled: Flag that tells the SDK to automatically set some of the SDK configuration values by
             calling to Wristband's SDK Auto-Configuration Endpoint. Any manually provided configurations will take
             precedence over the configs returned from the endpoint. Auto-configure is enabled by default. When disabled,
@@ -27,8 +31,11 @@ class AuthConfig:
         login_state_secret: A secret (32 or more characters in length) used for encryption and decryption of login state
             cookies. If not provided, it will default to using the client secret. For enhanced security, it is
             recommended to provide a value that is unique from the client secret.
-        login_url: The URL for initiating the login request.
-        redirect_uri: The redirect URI for callback after authentication.
+        login_url: The URL for initiating the login request. If using tenant subdomains, it must contain the
+            `{tenant_name}` placeholder exactly once, as the leftmost part of the hostname. The SDK determines your
+            application's root domain for parsing tenant subdomains by removing the `{tenant_name}` subdomain.
+        redirect_uri: The redirect URI for callback after authentication. If using tenant subdomains, it must contain
+            the `{tenant_name}` placeholder exactly once, as the leftmost part of the hostname.
         wristband_application_vanity_domain: The vanity domain of the Wristband application.
         custom_application_login_page_url: Custom application login (tenant discovery) page URL
             if you are self-hosting the application login/tenant discovery UI.
@@ -37,8 +44,6 @@ class AuthConfig:
             development (if necessary).
         is_application_custom_domain_active: Indicates whether an application-level custom domain
             is active in your Wristband application.
-        parse_tenant_from_root_domain: The root domain for your application from which to parse
-            out the tenant name. Indicates whether tenant subdomains are used for authentication.
         scopes: The scopes required for authentication.
         token_expiration_buffer: Buffer time (in seconds) to subtract from the access token’s expiration time.
             This causes the token to be treated as expired before its actual expiration, helping to avoid token
@@ -48,13 +53,13 @@ class AuthConfig:
     client_id: str
     client_secret: str
     wristband_application_vanity_domain: str
+    application_authorization_requests_enabled: Optional[bool] = None
     auto_configure_enabled: bool = True
     custom_application_login_page_url: Optional[str] = None
     dangerously_disable_secure_cookies: bool = False
     is_application_custom_domain_active: Optional[bool] = None
     login_state_secret: Optional[str] = None
     login_url: Optional[str] = None
-    parse_tenant_from_root_domain: Optional[str] = None
     redirect_uri: Optional[str] = None
     scopes: List[str] = field(default_factory=lambda: ["openid", "offline_access", "email"])
     token_expiration_buffer: int = 60
@@ -66,8 +71,12 @@ class SdkConfiguration:
     Represents the SDK configuration returned from Wristband's SDK Auto-Configuration Endpoint.
 
     Attributes:
+        application_authorization_requests_enabled: Flag indicating whether application-level authorization requests
+            are enabled for your Wristband application.
         custom_application_login_page_url: Custom application login (tenant discovery) page URL if you are
             self-hosting the application login/tenant discovery UI.
+        fallback_login_url: The login URL without the `{tenant_name}` subdomain, used when a tenant cannot be
+            resolved. Only applicable when application-level authorization requests are enabled.
         is_application_custom_domain_active: Indicates whether an application-level custom domain
             is active in your Wristband application.
         login_url: The URL for initiating the login request.
@@ -78,7 +87,9 @@ class SdkConfiguration:
     login_url: str
     is_application_custom_domain_active: bool
     redirect_uri: Optional[str] = None
+    application_authorization_requests_enabled: bool = True
     custom_application_login_page_url: Optional[str] = None
+    fallback_login_url: Optional[str] = None
     login_url_tenant_domain_suffix: Optional[str] = None
 
     @staticmethod
@@ -96,7 +107,9 @@ class SdkConfiguration:
             login_url=response["loginUrl"],
             redirect_uri=response.get("redirectUri"),
             is_application_custom_domain_active=response.get("isApplicationCustomDomainActive", False),
+            application_authorization_requests_enabled=response.get("applicationAuthorizationRequestsEnabled", True),
             custom_application_login_page_url=response.get("customApplicationLoginPageUrl"),
+            fallback_login_url=response.get("fallbackLoginUrl"),
             login_url_tenant_domain_suffix=response.get("loginUrlTenantDomainSuffix"),
         )
 

@@ -30,6 +30,7 @@ def auth_config():
         client_id="test_client",
         client_secret="test_secret_at_least_32_characters_long_for_encryption",
         wristband_application_vanity_domain="app.wristband.dev",
+        application_authorization_requests_enabled=False,
         login_url="https://app.wristband.dev/login",
         redirect_uri="https://example.com/callback",
         auto_configure_enabled=False,

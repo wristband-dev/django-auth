@@ -1,6 +1,6 @@
 import base64
 import json
-from typing import Any, Dict, List, Union, cast
+from typing import Any, Dict, List, Optional, Union, cast
 
 from cryptography.fernet import Fernet, MultiFernet
 
@@ -80,7 +80,7 @@ class DataEncryptor:
         encrypted: bytes = self.cipher.encrypt(json_data)
         return encrypted.decode()
 
-    def decrypt(self, encrypted_str: str) -> Dict[str, Any]:
+    def decrypt(self, encrypted_str: str, ttl: Optional[int] = None) -> Dict[str, Any]:
         """
         Decrypt an encrypted string back into a dictionary.
 
@@ -88,6 +88,8 @@ class DataEncryptor:
 
         Args:
             encrypted_str (str): The encrypted string to decrypt.
+            ttl (int, optional): The max age of the encrypted string in seconds. When provided, decryption fails
+                for strings encrypted longer ago than this.
 
         Returns:
             dict: The decrypted data dictionary.
@@ -100,5 +102,5 @@ class DataEncryptor:
         if not encrypted_str:
             raise ValueError("Empty encrypted string cannot be decrypted")
 
-        decrypted_bytes: bytes = self.cipher.decrypt(encrypted_str.encode())
+        decrypted_bytes: bytes = self.cipher.decrypt(encrypted_str.encode(), ttl=ttl)
         return cast(Dict[str, Any], json.loads(decrypted_bytes.decode()))

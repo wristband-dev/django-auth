@@ -28,6 +28,7 @@ def _auth_config() -> AuthConfig:
         login_url="https://auth.example.com/login",
         redirect_uri="https://app.example.com/callback",
         wristband_application_vanity_domain="auth.example.com",
+        application_authorization_requests_enabled=False,
         auto_configure_enabled=False,
     )
 
